@@ -1,0 +1,1346 @@
+<title>Netlanding Rate Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#F7F5EF; --surface:#FFFFFF; --surface-2:#FBFAF6;
+    --ink:#171A22; --ink-2:#4A4638; --muted:#6B6555;
+    --navy:#16235C; --navy-soft:#E7EAF4;
+    --amber:#E8A200; --amber-soft:#FDF2D6; --amber-line:#F0C765;
+    --line:#E3DFD3; --line-2:#EFECE2;
+    --live:#1F7A4D; --live-soft:#E3F2E9;
+    --archive:#8A6A2F; --archive-soft:#F6EEDC;
+    --danger:#A8321E;
+    --shadow:0 1px 2px rgba(23,26,34,.06), 0 8px 24px -12px rgba(23,26,34,.18);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#12141A; --surface:#1A1D25; --surface-2:#20242D;
+      --ink:#EDEBE4; --ink-2:#C6C2B4; --muted:#938D7C;
+      --navy:#93A6E6; --navy-soft:#222941;
+      --amber:#F5B429; --amber-soft:#332A14; --amber-line:#6B5520;
+      --line:#2D313B; --line-2:#262A33;
+      --live:#54B884; --live-soft:#17301F;
+      --archive:#D9AE5C; --archive-soft:#2C2418;
+      --danger:#E8836E;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#12141A; --surface:#1A1D25; --surface-2:#20242D;
+    --ink:#EDEBE4; --ink-2:#C6C2B4; --muted:#938D7C;
+    --navy:#93A6E6; --navy-soft:#222941;
+    --amber:#F5B429; --amber-soft:#332A14; --amber-line:#6B5520;
+    --line:#2D313B; --line-2:#262A33;
+    --live:#54B884; --live-soft:#17301F;
+    --archive:#D9AE5C; --archive-soft:#2C2418;
+    --danger:#E8836E;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  html{height:100%}
+  body{
+    height:100%; margin:0; background:var(--ground); color:var(--ink);
+    font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:15px; line-height:1.45; -webkit-text-size-adjust:100%;
+    overflow-y:auto; overscroll-behavior-y:contain;
+  }
+  h1,h2,h3{font-family:Archivo,"IBM Plex Sans",sans-serif; margin:0; text-wrap:balance; letter-spacing:-.01em}
+  button{font:inherit; color:inherit; cursor:pointer}
+  .num{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky; top:env(safe-area-inset-top,0px); z-index:40;
+    background:color-mix(in srgb, var(--ground) 92%, transparent);
+    backdrop-filter:saturate(1.4) blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-inner{padding:10px 16px 10px; display:flex; flex-direction:column; gap:8px}
+  .brandrow{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .wordmark{
+    font-family:Archivo,sans-serif; font-weight:800; font-size:14px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--navy);
+  }
+  .wordmark span{color:var(--muted); font-weight:600}
+  .iconbtn{
+    background:var(--surface); border:1px solid var(--line); border-radius:9px;
+    width:34px; height:34px; display:grid; place-items:center; color:var(--muted);
+  }
+  .iconbtn:active{background:var(--surface-2)}
+
+  .listpicker{display:flex; gap:6px}
+  .chip{
+    flex:1; border:1px solid var(--line); background:var(--surface); border-radius:10px;
+    padding:7px 8px 8px; text-align:left; display:flex; flex-direction:column; gap:1px;
+    transition:border-color .12s, background .12s;
+  }
+  .chip .ttl{font-family:Archivo,sans-serif; font-weight:700; font-size:14px; letter-spacing:-.01em}
+  .chip .sub{font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:600}
+  .chip[aria-pressed="true"]{border-color:var(--navy); background:var(--navy-soft)}
+  .chip[aria-pressed="true"] .sub{color:var(--navy)}
+  .chip[data-role="both"][aria-pressed="true"]{border-color:var(--amber); background:var(--amber-soft)}
+  .chip[data-role="both"][aria-pressed="true"] .sub{color:var(--archive)}
+
+  /* ---------- page ---------- */
+  main{padding:14px 16px 0; max-width:640px; margin:0 auto}
+  .pad-bottom{height:112px}
+
+  .hint{
+    display:flex; gap:9px; align-items:flex-start;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:13px 14px; color:var(--ink-2); font-size:13.5px;
+  }
+  .hint b{color:var(--ink); font-weight:600}
+  .hint .k{
+    display:inline-block; background:var(--surface-2); border:1px solid var(--line);
+    border-radius:5px; padding:0 5px; font-size:12.5px; color:var(--ink);
+  }
+
+  /* ---------- answer card ---------- */
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  .card + .card{margin-top:12px}
+  .card-head{padding:13px 15px 11px; border-bottom:1px solid var(--line-2)}
+  .eyebrow{
+    font-size:10.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+  }
+  .badge{
+    font-size:10px; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+    padding:2px 6px; border-radius:5px;
+  }
+  .badge.live{background:var(--live-soft); color:var(--live)}
+  .badge.arch{background:var(--archive-soft); color:var(--archive)}
+  .prodname{font-size:20px; font-weight:700; margin-top:5px; line-height:1.2}
+  .prodsub{color:var(--muted); font-size:13px; margin-top:2px}
+
+  .pricewrap{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:14px 15px 4px}
+  .price{
+    font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:54px; line-height:.92;
+    letter-spacing:-.03em; font-variant-numeric:tabular-nums; color:var(--ink);
+  }
+  .price .cur{font-size:30px; color:var(--muted); font-weight:600; margin-right:1px}
+  .pricemeta{display:flex; flex-direction:column; gap:1px; padding-bottom:3px}
+  .pricemeta .sz{font-family:Archivo,sans-serif; font-weight:700; font-size:16px; color:var(--navy)}
+  .pricemeta .cap{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:600}
+
+  .sizerow{display:flex; gap:6px; overflow-x:auto; padding:10px 15px 13px; scrollbar-width:thin}
+  .szbtn{
+    flex:0 0 auto; min-width:62px; border:1px solid var(--line); background:var(--surface-2);
+    border-radius:10px; padding:6px 9px 7px; text-align:center; display:flex; flex-direction:column; gap:2px;
+  }
+  .szbtn .l{font-size:10.5px; font-weight:700; letter-spacing:.05em; color:var(--muted)}
+  .szbtn .v{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:17px; font-variant-numeric:tabular-nums}
+  .szbtn[aria-pressed="true"]{background:var(--navy); border-color:var(--navy)}
+  .szbtn[aria-pressed="true"] .l{color:rgba(255,255,255,.72)}
+  .szbtn[aria-pressed="true"] .v{color:#fff}
+  :root[data-theme="dark"] .szbtn[aria-pressed="true"] .v,
+  :root[data-theme="dark"] .szbtn[aria-pressed="true"] .l{color:#12141A}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) .szbtn[aria-pressed="true"] .v{color:#12141A}
+    :root:not([data-theme="light"]) .szbtn[aria-pressed="true"] .l{color:rgba(18,20,26,.7)}
+  }
+  .szbtn.na{opacity:.4}
+  .szbtn.na .v{color:var(--muted)}
+
+  .factrow{display:flex; border-top:1px solid var(--line-2)}
+  .fact{flex:1; padding:10px 15px 11px; border-right:1px solid var(--line-2)}
+  .fact:last-child{border-right:0}
+  .fact .l{font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+  .fact .v{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:18px; margin-top:2px; font-variant-numeric:tabular-nums}
+  .fact.mrp{background:var(--amber-soft)}
+  .fact.mrp .v{color:var(--archive)}
+
+  .compare{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:10px 15px; border-top:1px solid var(--line-2); background:var(--surface-2);
+    font-size:13px; color:var(--ink-2);
+  }
+  .compare .d{display:flex; align-items:center; gap:7px}
+  .delta{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:13px}
+  .delta.up{color:var(--live)}
+  .delta.down{color:var(--danger)}
+
+  .flag{
+    display:flex; gap:8px; padding:9px 15px; border-top:1px solid var(--line-2);
+    background:var(--amber-soft); color:var(--archive); font-size:12.5px; line-height:1.4;
+  }
+  .flag b{font-weight:700}
+
+  /* candidates */
+  .pick{padding:6px 0 8px}
+  .pickrow{
+    display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;
+    background:none; border:0; border-top:1px solid var(--line-2); padding:11px 15px; text-align:left;
+  }
+  .pickrow:first-child{border-top:0}
+  .pickrow:active{background:var(--surface-2)}
+  .pickrow .nm{display:block; font-weight:600; font-size:14.5px}
+  .pickrow .sb{display:block; font-size:11.5px; color:var(--muted); margin-top:1px}
+  .pickrow .ar{color:var(--muted); font-size:17px}
+
+  /* ---------- browse ---------- */
+  .sechead{
+    display:flex; align-items:center; gap:9px; margin:22px 0 9px;
+    font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+  }
+  .sechead::after{content:""; flex:1; height:1px; background:var(--line)}
+
+  details.grp{background:var(--surface); border:1px solid var(--line); border-radius:11px; margin-bottom:7px; overflow:hidden}
+  details.grp > summary{
+    list-style:none; cursor:pointer; padding:11px 14px; display:flex; align-items:center;
+    justify-content:space-between; gap:10px; font-family:Archivo,sans-serif; font-weight:700; font-size:14px;
+  }
+  details.grp > summary::-webkit-details-marker{display:none}
+  details.grp > summary .cnt{font-size:11px; font-weight:600; color:var(--muted); font-family:"IBM Plex Sans",sans-serif}
+  details.grp[open] > summary{border-bottom:1px solid var(--line-2); background:var(--surface-2)}
+  .tblwrap{overflow-x:auto}
+  table{border-collapse:collapse; width:100%; font-size:13px; min-width:100%}
+  th,td{padding:7px 9px; text-align:right; white-space:nowrap; border-top:1px solid var(--line-2)}
+  th{font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:700; border-top:0}
+  td.nm,th.nm{text-align:left; white-space:normal; min-width:132px; font-weight:600}
+  td.nm .vr{display:block; font-weight:400; font-size:11.5px; color:var(--muted)}
+  td.p{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; font-weight:600}
+  td.p.off{color:var(--muted); font-weight:400}
+  td.mrp,th.mrp{background:var(--amber-soft); color:var(--archive); font-weight:700}
+  tbody tr:active{background:var(--surface-2)}
+
+  /* ---------- terms ---------- */
+  .terms{font-size:12.5px; color:var(--ink-2); padding:0 14px 13px}
+  .terms li{margin:3px 0}
+  .terms ol{padding-left:18px; margin:6px 0}
+
+  /* ---------- bottom bar ---------- */
+  .dock{
+    position:fixed; left:0; right:0; bottom:0; z-index:50;
+    padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));
+    background:color-mix(in srgb, var(--ground) 94%, transparent);
+    backdrop-filter:saturate(1.4) blur(12px);
+    border-top:1px solid var(--line);
+  }
+  .dock-inner{max-width:640px; margin:0 auto; display:flex; gap:9px; align-items:center}
+  .ask{
+    flex:1; min-width:0; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:12px 13px; font-size:15px; color:var(--ink); font-family:inherit;
+  }
+  .ask::placeholder{color:var(--muted)}
+  .ask:focus{outline:2px solid var(--navy); outline-offset:1px}
+  .mic{
+    flex:0 0 auto; width:54px; height:48px; border-radius:12px; border:1px solid var(--navy);
+    background:var(--navy); color:#fff; display:grid; place-items:center; position:relative;
+  }
+  :root[data-theme="dark"] .mic, :root[data-theme="dark"] .mic svg{color:#12141A}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .mic{color:#12141A} }
+  .mic svg{width:22px; height:22px}
+  .mic[data-state="listening"]{background:var(--danger); border-color:var(--danger); color:#fff}
+  .mic[data-state="listening"]::after{
+    content:""; position:absolute; inset:-4px; border-radius:15px;
+    border:2px solid var(--danger); animation:pulse 1.1s ease-out infinite;
+  }
+  @keyframes pulse{0%{opacity:.7; transform:scale(.97)} 100%{opacity:0; transform:scale(1.14)}}
+  @media (prefers-reduced-motion:reduce){ .mic[data-state="listening"]::after{animation:none; opacity:.55} }
+  .heard{
+    max-width:640px; margin:0 auto 7px; font-size:12.5px; color:var(--muted);
+    display:flex; align-items:center; gap:7px; min-height:17px;
+  }
+  .heard b{color:var(--ink); font-weight:600}
+
+  /* ---------- date prompt sheet ---------- */
+  .sheet{position:fixed; inset:0; z-index:90; display:grid; place-items:end center}
+  .sheet::before{content:""; position:absolute; inset:0; background:rgba(12,14,20,.45)}
+  .sheetbox{
+    position:relative; width:100%; max-width:640px; background:var(--surface);
+    border-radius:18px 18px 0 0; padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));
+    box-shadow:0 -10px 40px rgba(0,0,0,.25);
+  }
+  .sheetbox h2{font-size:19px}
+  .sheetbox p{color:var(--muted); font-size:13.5px; margin:5px 0 14px}
+  .bigopt{
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border:1px solid var(--line); background:var(--surface-2); border-radius:13px;
+    padding:14px 15px; margin-bottom:9px; text-align:left;
+  }
+  .bigopt .t{display:block; font-family:Archivo,sans-serif; font-weight:700; font-size:17px}
+  .bigopt .s{display:block; font-size:11.5px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; font-weight:600; margin-top:2px}
+  .bigopt .ar{color:var(--muted); font-size:17px; flex:0 0 auto}
+  .bigopt:active{background:var(--navy-soft)}
+  .sheetfoot{display:flex; align-items:center; gap:8px; margin-top:4px; font-size:13px; color:var(--muted)}
+  .sheetfoot input{width:17px; height:17px; accent-color:var(--navy)}
+
+  .settingrow{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:11px 14px; border-top:1px solid var(--line-2); font-size:13.5px;
+  }
+  .settingrow:first-of-type{border-top:0}
+  .settingrow .d{display:block; font-size:11.5px; color:var(--muted); margin-top:1px}
+  .sw{width:17px; height:17px; accent-color:var(--navy); flex:0 0 auto}
+
+  footer{padding:18px 16px 4px; color:var(--muted); font-size:11.5px; text-align:center; line-height:1.6}
+</style>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brandrow">
+      <div class="wordmark">Netlanding <span>/ Rate Finder</span></div>
+      <button class="iconbtn" id="settingsBtn" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.5a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 7.5a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+    <div class="listpicker" role="group" aria-label="Which price list">
+      <button class="chip" data-role="aug" id="chipAug" aria-pressed="false">
+        <span class="ttl">20 Aug 2026</span><span class="sub">Current list</span>
+      </button>
+      <button class="chip" data-role="jun" id="chipJun" aria-pressed="false">
+        <span class="ttl">01 Jun 2026</span><span class="sub">Previous list</span>
+      </button>
+      <button class="chip" data-role="both" id="chipBoth" aria-pressed="false">
+        <span class="ttl">Both</span><span class="sub">Compare</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="answer"></div>
+
+  <div class="sechead" id="browseHead">Full price list</div>
+  <div id="browse"></div>
+
+  <footer>
+    Rates are read from the Skipper Garments Netlanding price lists supplied on this device.<br>
+    Rates may change without prior notice — always confirm against the printed list before booking.
+  </footer>
+  <div class="pad-bottom"></div>
+</main>
+
+<div class="dock">
+  <div class="heard" id="heard"></div>
+  <div class="dock-inner">
+    <input class="ask" id="ask" type="text" inputmode="search" autocomplete="off"
+           placeholder="Gold White RN 90" aria-label="Ask for a price">
+    <button class="mic" id="mic" data-state="idle" aria-label="Ask by voice">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="sheetHost"></div>
+
+<script>
+/* ============================================================
+   DATA — transcribed from the two supplied Netlanding PDFs.
+   Row shape: [name, variant, pack, [prices...], mrp, packOf, note]
+   null price = "–" (size not offered)
+   ============================================================ */
+var SZ = {
+  A:   ["75","80-90","95-100","105","110","120"],
+  K:   ["45-55","60-70","73","75"],
+  J3A: ["45-55","60-70","75"],
+  J3J: ["45-55","60-70","73"],
+  J5:  ["45-55","60-70","75","80","85"],
+  M4:  ["M-L","XL-2XL","3XL","4XL"],
+  M3:  ["M-L","XL-2XL","3XL"],
+  S3:  ["S-M-L","XL-2XL","3XL"]
+};
+var N = null;
+
+var LISTS = [
+{
+  id:"aug", short:"20 Aug 2026", long:"Effect from 20th August 2026", role:"Current list",
+  terms:["No Cd, No Schemes, No Bonus.","All Rates Are Freight Paid To Destination.",
+         "All Rates Are Gst Paid Prices Only.","All Rates Are Per Piece.",
+         "Rates May Change Without Prior Notice.","All Goods Will Be Despatched At Purchaser's Risk And Responsibility."],
+  groups:[
+   {n:"Skipper Men", s:"A", mrp:"MRP 80-90", rows:[
+     ["Gold White","RN","",[42,44,53,56,59,N],95,0,""],
+     ["Gold White","RNS","",[58,60,69,72,75,N],125,0,""],
+     ["Gym Vest Plain","Plain","",[N,63,69,N,N,N],130,0,""],
+     ["Gold Uro Cut","Brief","",[43,43,43,46,49,N],90,0,""]]},
+   {n:"Skipper Women", s:"A", mrp:"MRP 80-90", rows:[
+     ["Gold Dyed (I/E)","Penteez","Loose Box",[28,30,35,38,41,N],65,0,""],
+     ["Gold Print (I/E)","Penteez","Loose Box",[30,32,37,40,43,N],67,0,""],
+     ["Gold Dyed (I/E)","Penteez","2 Pc Box",[30,32,37,40,43,N],67,0,""],
+     ["Gold Print (I/E)","Penteez","2 Pc Box",[32,34,39,42,45,N],70,0,""],
+     ["Gold Print","Bloomer","",[N,42,49,N,N,N],90,0,""]]},
+   {n:"Skipper Kids", s:"K", mrp:"MRP 60-70", rows:[
+     ["Gold White","RN","",[29,30,34,N],61,0,""],
+     ["Gold Dyed","Bloomer","",[30,31,N,33],64,0,""],
+     ["Gold Print","Bloomer","",[31,32,N,34],65,0,""]]},
+   {n:"Loria Women", s:"A", mrp:"MRP 80-90", rows:[
+     ["Loria Plain","Misty I/E","2 Pc Pack",[N,44,48,50,52,N],95,0,""],
+     ["Loria Print","Penteez I/E","2 Pc Pack",[N,50,56,59,62,N],105,0,""],
+     ["Loria Plain","Hippy O/E","2 Pc Pack",[N,49,54,56,58,N],102,0,""],
+     ["Loria Print","Penteez O/E","2 Pc Pack",[N,53,58,61,64,N],110,0,""],
+     ["Loria Cycling","Shorts","Assorted",[59,61,66,70,74,N],130,0,""],
+     ["Loria Cycling","Shorts","White/Black/Skin",[59,61,66,70,74,N],130,0,""],
+     ["Loria Vaivon","Camisole","Adjustment",[62,64,70,73,76,N],135,0,""],
+     ["Loria Vaivon","Camisole","White/Black/Skin",[62,64,70,73,76,N],135,0,""]]},
+   {n:"Colin Vest", s:"A", mrp:"MRP 80-90", rows:[
+     ["Colinlike White","RN","",[58,60,69,72,75,84],125,0,""],
+     ["Colinlike White","RNS","",[71,76,85,89,92,101],160,0,""]]},
+   {n:"Colinsight (Inner Elastic)", s:"A", mrp:"MRP 80-90", rows:[
+     ["Classic I/E","Brief","",[N,48,53,56,59,66],105,0,""],
+     ["Classic I/E","Boxer","2 Pc Pack",[N,60,67,71,75,N],125,0,""],
+     ["Classic I/E","Trunk","2 Pc Pack",[N,71,78,83,88,103],145,0,""],
+     ["Classic I/E","Boxer O/Pkt","2 Pc Pack",[N,74,82,88,94,N],155,0,""]]},
+   {n:"Colinspire (Outer Elastic)", s:"A", mrp:"MRP 80-90", rows:[
+     ["Active O/E","Brief","",[N,52,57,60,62,N],110,0,""],
+     ["Active O/E","Boxer","",[N,67,76,N,N,N],140,0,""],
+     ["Active O/E","Trunk","2 Pc Pack",[N,77,84,89,94,N],160,0,""]]},
+   {n:"Colintrans", s:"A", mrp:"MRP 80-90", rows:[
+     ["Printed I/E","Brief","",[N,77,82,86,90,N],160,0,""],
+     ["Printed I/E","Trunk","",[N,97,105,110,115,N],200,0,""],
+     ["Magic I/E","Trunk","",[N,97,105,110,115,N],200,0,""],
+     ["Magic I/E","Boxer","",[N,89,97,102,107,N],185,0,""],
+     ["Magic Pkt I/E","Boxer","",[N,103,110,N,N,N],210,0,""]]},
+   {n:"Colinpulse", s:"A", mrp:"MRP 80-90", rows:[
+     ["Bikini O/E","Brief (Merserised)","",[N,60,65,69,73,N],125,0,""],
+     ["Rib O/E","Trunk","",[N,88,97,102,107,118],180,0,""]]},
+   {n:"Colin 96 Mens Bottoms", s:"M4", mrp:"MRP 80-90", rows:[
+     ["Shorts C9601 - J20","Double Zip Shorts","",[187,187,187,187],435,5,""],
+     ["Topper - J 21","Double Zip Track","",[220,220,220,220],510,5,""],
+     ["Cargo - J 22","Cargo Pkt Track","",[270,270,270,N],625,5,""],
+     ["Tangent - F 31","Cross Pkt Track","",[260,260,260,N],600,5,""],
+     ["Combat - SP 42","Six Pkt Track","",[305,305,305,305],705,5,""],
+     ["Cross - SP 43","Cross Pkt Track","",[265,265,265,265],610,5,""]]},
+   {n:"Just Joey Innerwear", s:"J3A", mrp:"MRP 60-70", rows:[
+     ["Magic","Print / RN","Vest",[49,51,55],105,0,""],
+     ["Magic","Print / IE","Brief",[46,48,52],100,0,""],
+     ["Magic","Print / IE","Drawer",[52,54,58],110,0,""],
+     ["Lite Rib","Dyed / Gym","Vest",[57,63,68],130,0,""],
+     ["Ladla","White / Dyed","Drawer",[40,43,46],90,0,""],
+     ["Top Grip","Dyed O/E","Drawer",[48,50,54],105,0,""],
+     ["Top Grip","Dyed O/E","Brief",[46,48,50],100,0,""],
+     ["Hi-Cut","Dyed O/E","Brief",[41,44,47],90,0,""],
+     ["Contra","Dyed O/E","Brief",[42,46,48],95,0,""],
+     ["Candy","Dyed I/E","Bloomer",[38,39,42],80,0,""],
+     ["Candy","Print I/E","Bloomer",[39,40,43],85,0,""],
+     ["Just Joey","Plain","Cycling Shorts",[N,49,54],100,0,""],
+     ["Just Joey","Assorted","Camisole",[N,42,45],90,0,""]]},
+   {n:"Just Joey Tops / T-Shirt", s:"J5", mrp:"MRP 60-70", rows:[
+     ["Rocket - JBS 2501","RNS (Fixed Ratio-FR)","",[91,91,91,N,N],210,10,""],
+     ["Rocket - JBS 2501","RNS (Fixed Ratio-FR)","",[N,99,99,99,99],230,10,""],
+     ["Rocket - JCS 2503","RN (Fixed Ratio-FR)","",[86,86,86,N,N],200,10,""],
+     ["Rocket - JCS 2503","RN (Fixed Ratio-FR)","",[N,94,94,94,94],220,10,""],
+     ["Jose - JBS 2401","Back Print HS (FR)","",[101,101,101,N,N],235,5,""],
+     ["Jose - JBS 2401","Back Print HS (FR)","",[N,111,111,111,111],260,5,""],
+     ["Rex - JBS 2307","Back Print O/S RNS (FR)","",[N,128,128,128,128],295,5,""],
+     ["Adam - JBS 2504","RNS","",[N,134,134,134,134],310,5,""]]},
+   {n:"Just Joey Bottoms", s:"J5", mrp:"MRP 60-70", rows:[
+     ["Shorts 01","Double Side Piping (FR)","",[96,96,96,N,N],225,5,""],
+     ["Shorts 01","Double Side Piping (FR)","",[N,106,106,106,106],245,5,""],
+     ["Pant 03","Piping Trackpant","",[N,177,177,177,177],410,5,""],
+     ["Pant 04","Piping Jogger","",[N,191,191,191,191],440,5,""],
+     ["Pant 05","Cotton Rich Fabric","",[N,150,150,150,150],345,5,""],
+     ["Fitto Pant - SP 10","Waistband Jogger","",[N,176,176,176,176],405,5,""],
+     ["Speedo Pant - SP 11","Cargo Track","",[N,216,216,216,216],500,5,""],
+     ["Kitto Pant - SP 12","Waistband Track","",[N,190,190,190,190],440,5,""]]},
+   {n:"Just Joey Semi Winter", s:"J5", mrp:"MRP 60-70", rows:[
+     ["John - JFS 2505","100% Cotton","",[N,120,120,120,120],280,5,""],
+     ["Thomas JFS 2506","100% Cotton","",[N,120,120,120,120],280,5,""],
+     ["Jewel JWL 2210","Tencel Lycra","",[N,141,141,141,141],325,5,""],
+     ["Blaze JFS 2403","100% Cotton","",[125,135,135,135,135],315,5,""],
+     ["Theo JFS 2405","100% Cotton","",[125,135,135,135,135],315,5,""],
+     ["Hugo JFS 2408","Looper","",[N,160,160,160,160],370,5,""],
+     ["Owen JFS 2409","Tencel Lycra","",[N,150,150,150,150],345,5,""],
+     ["Stylo JFS 2411","Looper","",[N,170,170,170,170],395,5,""]]},
+   {n:"Athlon Mens Tops", s:"S3", mrp:"MRP 80-90", rows:[
+     ["SN 01 - Asst/Black","Broad Shoulder Gym Vest","",[90,90,N],210,5,""],
+     ["APB - 50 Mens Prime Basic","RNS Assorted / Zipper Pack","",[164,164,164],380,10,""],
+     ["APB - 50 Mens Prime Basic B/W","RNS Assorted / Zipper Pack","",[164,164,164],380,10,""],
+     ["APB 51 - Harry","RNS Assorted / Zipper Pack","",[177,177,177],410,10,""],
+     ["Sketch Tee - AST 10","Print RN","",[140,140,140],325,10,""],
+     ["Muscle Tee - AMT 54","Plain RN","",[133,133,133],310,10,""],
+     ["APQ 10","Matty RN With Logo","",[152,152,N],350,6,""],
+     ["APQ 18","Matty FS With Cuff","",[178,178,N],410,5,""],
+     ["Power Basic - AFD 01","Basic Assorted","",[130,130,N],300,6,""],
+     ["Coolmax - APQ 16","Polo HS With Logo","",[205,205,205],475,10,""],
+     ["Coolmax - APQ 16 B/W","Polo HS With Logo","",[205,205,205],475,10,""],
+     ["Coolmax - APQ 16 Pkt","Polo HS With Logo","",[220,220,220],510,10,""],
+     ["Tron - ATE 641","HD Print / Zipper Packing","",[242,242,N],560,5,""],
+     ["Space Fullsleeve","Cotton With Chest Print","",[145,145,N],335,5,""],
+     ["ATP 114","Henley Matty FS With Cuff","",[205,205,N],475,5,""],
+     ["ADT 711","Cotton Lycra Fullsleeves","",[256,256,N],590,5,""]]},
+   {n:"Athlon Mens Bottoms", s:"M3", mrp:"MRP 80-90", rows:[
+     ["Dot Knit Shorts ADT 211","Dot Knit","",[205,205,205],475,5,""],
+     ["Band Jogger","Loopknit Double Zip","",[200,200,200],460,5,""],
+     ["Mens Shorts - ATP 403","Two Zipper","",[220,220,220],510,5,""],
+     ["Sunny Trackpant ATP 404","Double Side Zip","",[305,305,305],705,5,""],
+     ["Space Jogger","100% Cotton","",[180,180,180],415,5,""],
+     ["FC 46","Cotton Look","",[265,265,265],610,5,""],
+     ["Pipe Trackpant ATP 201","Dot Knit","",[270,270,270],625,5,""]]}
+  ]
+},
+{
+  id:"jun", short:"01 Jun 2026", long:"Effect from 01st June 2026", role:"Previous list",
+  terms:["All Rates Are Per Unit = 10pcs.","All Rates Are Gst Inclusive Rates.",
+         "All Rates Are F.o.r Paid To Destination.","Cd Will Be Strictly Allowed In Payment Of 30-45 Days.",
+         "Rates May Change Without Prior Notice.","All Goods Will Be Despatched At Purchaser's Risk And Responsibility."],
+  groups:[
+   {n:"Skipper Men", s:"A", mrp:"MRP 80-90", rows:[
+     ["Gold White","RN","",[41,43,52,55,58,N],95,0,""],
+     ["Gold White","RNS","",[57,59,68,71,74,N],125,0,""],
+     ["Gym Vest Plain","Plain","",[N,62,68,N,N,N],130,0,""],
+     ["Gym Vest Design","Assorted / Design","",[N,66,72,72,N,N],140,0,""],
+     ["Gold Uro Cut","Brief","",[42,42,42,45,48,N],90,0,""]]},
+   {n:"Skipper Women", s:"A", mrp:"MRP 80-90", rows:[
+     ["Gold Dyed (I/E)","Penteez","Loose Box",[27,29,34,37,40,N],65,0,""],
+     ["Gold Print (I/E)","Penteez","Loose Box",[29,31,36,39,42,N],67,0,""],
+     ["Gold Dyed (I/E)","Penteez","2 Pc Box",[29,31,36,39,42,N],67,0,""],
+     ["Gold Print (I/E)","Penteez","2 Pc Box",[31,33,38,41,44,N],70,0,""],
+     ["Gold Print","Bloomer","",[N,41,48,N,N,N],90,0,""]]},
+   {n:"Skipper Kids", s:"K", mrp:"MRP 60-70", rows:[
+     ["Gold White","RN","",[28,29,33,N],61,0,""],
+     ["Gold Dyed","Bloomer","",[29,30,N,32],64,0,""],
+     ["Gold Print","Bloomer","",[30,31,N,33],65,0,""]]},
+   {n:"Loria Women", s:"A", mrp:"MRP 80-90", rows:[
+     ["Loria Plain","Misty I/E","2 Pc Pack",[N,42,46,48,50,N],95,0,""],
+     ["Loria Print","Penteez I/E","2 Pc Pack",[N,48,54,57,60,N],105,0,""],
+     ["Loria Plain","Hippy O/E","2 Pc Pack",[N,47,52,54,74,N],102,0,
+       "The June sheet prints 74 at size 110 for this row. The August sheet shows 58. Confirm before quoting size 110."],
+     ["Loria Print","Penteez O/E","2 Pc Pack",[N,51,56,59,62,N],110,0,""],
+     ["Loria Cycling","Shorts","Assorted",[59,61,66,70,74,N],130,0,""],
+     ["Loria Cycling","Shorts","White/Black/Skin",[59,61,66,70,74,N],130,0,""],
+     ["Loria Vaivon","Camisole","No Ajs",[51,53,59,62,65,N],115,0,""],
+     ["Loria Vaivon","Camisole","Adjustment",[62,64,70,73,76,N],135,0,""],
+     ["Loria Vaivon","Camisole","White/Black/Skin",[62,64,70,73,76,N],135,0,""]]},
+   {n:"Colin Vest", s:"A", mrp:"MRP 80-90", rows:[
+     ["Colinlike White","RN","",[56,58,67,70,73,82],125,0,""],
+     ["Colinlike White","RNS","",[69,74,83,87,90,99],160,0,""]]},
+   {n:"Colinsight (Inner Elastic)", s:"A", mrp:"MRP 80-90", rows:[
+     ["Classic I/E","Brief","",[N,46,51,54,57,64],105,0,""],
+     ["Classic I/E","Boxer","2 Pc Pack",[N,58,65,69,73,N],125,0,""],
+     ["Classic I/E","Trunk","2 Pc Pack",[N,69,76,81,86,101],145,0,""],
+     ["Classic I/E","Boxer O/Pkt","2 Pc Pack",[N,72,80,86,92,N],155,0,""]]},
+   {n:"Colinspire (Outer Elastic)", s:"A", mrp:"MRP 80-90", rows:[
+     ["Active O/E","Brief","",[N,50,55,58,60,N],110,0,""],
+     ["Active O/E","Boxer","",[N,65,74,N,N,N],140,0,""],
+     ["Active O/E","Trunk","2 Pc Pack",[N,75,82,87,92,N],160,0,""]]},
+   {n:"Colintrans", s:"A", mrp:"MRP 80-90", rows:[
+     ["Printed I/E","Brief","",[N,75,80,84,88,N],160,0,""],
+     ["Printed I/E","Trunk","",[N,95,103,108,113,N],200,0,""],
+     ["Magic I/E","Trunk","",[N,95,103,108,113,N],200,0,""],
+     ["Magic I/E","Boxer","",[N,87,95,100,105,N],185,0,""],
+     ["Magic Pkt I/E","Boxer","",[N,101,108,N,N,N],210,0,""]]},
+   {n:"Colinpulse", s:"A", mrp:"MRP 80-90", rows:[
+     ["Bikini O/E","Brief (Merserised)","",[N,58,63,67,71,N],125,0,""],
+     ["Rib O/E","Trunk","",[N,86,95,100,105,116],180,0,""]]},
+   {n:"Just Joey Innerwear (Boys)", s:"J3J", mrp:"MRP 60-70", rows:[
+     ["Magic","Print / RN","Vest",[48,50,54],105,0,""],
+     ["Magic","Print / IE","Brief",[45,47,51],100,0,""],
+     ["Magic","Print / IE","Drawer",[51,53,57],110,0,""],
+     ["Lite Rib","Dyed / Gym","Vest",[56,62,67],130,0,""],
+     ["Ladla","White / Dyed","Drawer",[39,42,45],90,0,""],
+     ["Top Grip","Dyed O/E","Drawer",[47,49,53],105,0,""],
+     ["Top Grip","Dyed O/E","Brief",[45,47,49],100,0,""],
+     ["Hi-Cut","Dyed O/E","Brief",[40,43,46],90,0,""],
+     ["Contra","Dyed O/E","Brief",[41,45,47],95,0,""],
+     ["Candy","Dyed I/E","Bloomer",[37,38,41],80,0,""],
+     ["Candy","Print I/E","Bloomer",[38,39,42],85,0,""],
+     ["Just Joey","Plain","Cycling Shorts",[N,48,53],100,0,""],
+     ["Just Joey","Camisole","",[N,41,44],90,0,""]]},
+   {n:"Just Joey Tees", s:"J5", mrp:"MRP 60-70", rows:[
+     ["Rocket - JBS 2501","RNS","",[95,100,109,117,135],220,0,""],
+     ["Rocket - JCS 2503","Cutsleeve RN","",[90,95,104,113,131],210,0,""],
+     ["Adam - JBS 2504","RNS","",[N,125,133,142,151],275,0,""],
+     ["Adam - JBS 2401","Back Print HS","",[126,135,144,153,161],300,0,""],
+     ["Rex - JBS 2307","Back Print O/S RNS","",[N,116,125,138,153],260,0,""]]},
+   {n:"Just Joey Bottoms", s:"J5", mrp:"MRP 60-70", rows:[
+     ["Shorts 01","Double Side Piping","",[103,107,116,125,133],240,0,"JJ"],
+     ["Pant 03","Piping Track Pant","",[155,164,177,191,199],365,0,"JJ"],
+     ["Pant 04","Piping Jogger","",[N,182,191,198,208],400,0,"JJ"],
+     ["Fitto Pant - SP 10","Waistband Jogger","",[N,169,173,182,191],370,0,"JJ"],
+     ["Speedo Pant - SP 11","Cargo Track","",[N,207,216,224,233],460,0,"JJ"],
+     ["Kitto Pant - SP 12","Waistband Track","",[N,181,189,198,207],400,0,"JJ"]]},
+   {n:"Colin 96", s:"M4", mrp:"MRP M-L", rows:[
+     ["Shorts C9601 - J 20","Double Zip Shorts","",[164,180,196,213],370,0,""],
+     ["Topper - J 21","Double Zip Track","",[199,213,226,239],440,0,""],
+     ["Cargo - J 22","Cargo Pkt Track","",[248,261,279,296],545,0,""],
+     ["Tangent - F 31","Cross Pkt Track","",[240,264,272,N],525,0,""],
+     ["Combat - SP 42","Six Pkt Track","",[292,301,309,318],640,0,""],
+     ["Cross - SP 43","Cross Pkt Track","",[248,257,265,274],545,0,""]]},
+   {n:"Athlon", s:"M3", mrp:"MRP M-L", rows:[
+     ["APB - 50 Mens Prime Basic","RNS Assorted / Zipper Pack","",[147,164,182],325,0,""],
+     ["APB - 50 Mens Prime Basic B/W","RNS Assorted / Zipper Pack","",[146,163,181],325,0,""],
+     ["APB 51 - Harry","RNS Assorted / Zipper Pack","",[160,177,195],355,0,""],
+     ["Sketch Tee - AST 10","Print RN","",[127,140,154],285,0,""],
+     ["Muscle - AMT 54","Plain RN","",[120,133,147],270,0,""],
+     ["Power Basic - AFD 01","Basic Assorted","",[125,134,N],280,0,""],
+     ["Coolmax - APQ 16","Polo HS With Logo","",[186,205,218],410,0,""],
+     ["Coolmax - APQ 16 B/W","Polo HS With Logo","",[185,205,218],410,0,""],
+     ["Coolmax - APQ 16 Pkt","Polo HS With Logo","",[204,222,235],450,0,""],
+     ["Tron ATE 641","HD Print / Zipper Pack","",[230,248,N],505,0,""]]},
+   {n:"Athlon Bottoms", s:"M3", mrp:"MRP S-M-L", rows:[
+     ["Dot Knit Shorts ADT 211","Dot Knit","",[186,204,221],410,0,""],
+     ["Mens Shorts - ATP 403","Two Zipper","",[204,220,235],450,0,""],
+     ["Sunny Trackpant ATP 404","Double Side Zip","",[292,305,318],640,0,""]]}
+  ]
+}
+];
+
+var JJ_NOTE = "In the June sheet the value cells of this table sit one column right of the size headings. Read here as 45-55 through 85, matching the August sheet's layout. Confirm before quoting.";
+
+/* ============================================================
+   INDEX
+   ============================================================ */
+var ITEMS = [];
+LISTS.forEach(function(L){
+  L.groups.forEach(function(g){
+    g.sizes = SZ[g.s];
+    g.rows.forEach(function(r, i){
+      ITEMS.push({
+        list:L.id, group:g.n, sizes:g.sizes, mrpLabel:g.mrp,
+        name:r[0], variant:r[1], pack:r[2], prices:r[3], mrp:r[4],
+        packOf:r[5], note:(r[6]==="JJ"?JJ_NOTE:r[6]),
+        key:(g.n+"|"+r[0]+"|"+r[1]+"|"+r[2]+"|"+i).toLowerCase(),
+        rowIndex:i
+      });
+    });
+  });
+});
+
+/* ------------------------------------------------------------
+   Speech-friendly aliases. Left side is what the phone may hear,
+   right side is the token that actually appears in the price list.
+   ------------------------------------------------------------ */
+var ALIAS = {
+  "round":"rn","roundneck":"rn","r":"rn","rn":"rn",
+  "rns":"rns","sleeve":"rns","sleeves":"rns","sleeved":"rns",
+  "arenas":"rns","arena":"rn","aryan":"rn","aaron":"rn","urn":"rn","earn":"rn",
+  "inner":"ie","internal":"ie","ie":"ie","i":"ie",
+  "outer":"oe","outside":"oe","oe":"oe","o":"oe",
+  "elastic":"elastic","elastics":"elastic",
+  "pocket":"pkt","pockets":"pkt","pkt":"pkt",
+  "full":"fs","fullsleeve":"fs","fs":"fs",
+  "half":"hs","hs":"hs",
+  "oversize":"os","oversized":"os","os":"os",
+  "jockey":"joey","jocky":"joey","joey":"joey","joy":"joey","jolly":"joey","zoe":"joey",
+  "lauria":"loria","loriya":"loria","lorya":"loria","laurie":"loria","lori":"loria","glorya":"loria","gloria":"loria",
+  "collin":"colin","colen":"colin","colon":"colin","column":"colin","callin":"colin","koln":"colin",
+  "colinsight":"colinsight","colinspire":"colinspire","colintrans":"colintrans","colinpulse":"colinpulse",
+  "sight":"colinsight","spire":"colinspire","trans":"colintrans","pulse":"colinpulse",
+  "athlone":"athlon","atlan":"athlon","athlan":"athlon","atlon":"athlon","athelon":"athlon","athlon":"athlon",
+  "skipper":"skipper","skiper":"skipper","scipper":"skipper","shipper":"skipper",
+  "panties":"penteez","panty":"penteez","pantis":"penteez","pentis":"penteez","pentix":"penteez",
+  "penties":"penteez","pantys":"penteez","penteez":"penteez",
+  "bloomers":"bloomer","blumer":"bloomer","blumers":"bloomer","bloomer":"bloomer",
+  "cami":"camisole","camisol":"camisole","camisoles":"camisole","camisole":"camisole",
+  "vivon":"vaivon","weiwan":"vaivon","vaevon":"vaivon","vivan":"vaivon","vaivon":"vaivon",
+  "euro":"uro","urocut":"uro","uro":"uro",
+  "mercerised":"merserised","mercerized":"merserised","merserized":"merserised","merserised":"merserised",
+  "briefs":"brief","brief":"brief",
+  "boxers":"boxer","boxer":"boxer",
+  "trunks":"trunk","trunk":"trunk",
+  "drawers":"drawer","drawer":"drawer","underwear":"drawer",
+  "vests":"vest","vest":"vest","baniyan":"vest","banyan":"vest","banian":"vest",
+  "short":"shorts","shorts":"shorts",
+  "trackpant":"track","trackpants":"track","tracks":"track","track":"track",
+  "joggers":"jogger","jogger":"jogger",
+  "tshirt":"shirt","tshirts":"shirt","tee":"tee","tees":"tee","t":"tee",
+  "kid":"kids","kids":"kids","children":"kids","child":"kids","boys":"boys","boy":"boys",
+  "ladies":"women","lady":"women","womens":"women","female":"women","women":"women",
+  "mens":"men","gents":"men","male":"men","men":"men",
+  "gym":"gym","gymvest":"gym",
+  "white":"white","whites":"white","dyed":"dyed","died":"dyed","dye":"dyed",
+  "print":"print","printed":"print","prints":"print","plain":"plain",
+  "gold":"gold","golden":"gold","cold":"gold",
+  "hicut":"hicut","highcut":"hicut","haircut":"hicut",
+  "topgrip":"top","ladla":"ladla","laddla":"ladla","larla":"ladla",
+  "candy":"candy","kandy":"candy","contra":"contra","kontra":"contra",
+  "magic":"magic","majic":"magic",
+  "rib":"rib","ribbed":"rib","literib":"rib",
+  "bikini":"bikini","bikni":"bikini",
+  "classic":"classic","clasic":"classic","active":"active",
+  "combat":"combat","cargo":"cargo","topper":"topper","tangent":"tangent","cross":"cross",
+  "coolmax":"coolmax","cool":"coolmax","harry":"harry","hari":"harry",
+  "muscle":"muscle","sketch":"sketch","tron":"tron","space":"space","polo":"polo",
+  "rocket":"rocket","rockets":"rocket","adam":"adam","jose":"jose","rex":"rex","wrecks":"rex",
+  "john":"john","thomas":"thomas","jewel":"jewel","blaze":"blaze","theo":"theo",
+  "hugo":"hugo","owen":"owen","stylo":"stylo","stylow":"stylo",
+  "fitto":"fitto","feeto":"fitto","speedo":"speedo","kitto":"kitto","keto":"kitto",
+  "pant":"pant","pants":"pant","looper":"looper","tencel":"tencel","lycra":"lycra",
+  "cotton":"cotton","matty":"matty","henley":"henley","dot":"dot","knit":"knit",
+  "zip":"zip","zipper":"zip","band":"band","pipe":"pipe","piping":"piping",
+  "loose":"loose","box":"box","pack":"pack","pc":"pc","pcs":"pc","piece":"pc","pieces":"pc",
+  "assorted":"assorted","asst":"assorted","assort":"assorted",
+  "adjustment":"adjustment","adjust":"adjustment","misty":"misty","hippy":"hippy","hippie":"hippy",
+  "skin":"skin","black":"black","bw":"bw",
+  "semi":"semi","winter":"winter","basic":"basic","prime":"prime","power":"power",
+  "colin96":"colin96","96":"colin96","c96":"colin96"
+};
+
+var LIST_WORDS = {
+  aug:["august","aug","latest","current","20th","20-aug","augustlist","newlist"],
+  /* NB: bare "01" is deliberately absent — it is a style code (Shorts 01, AFD 01, SN 01). */
+  jun:["june","jun","old","previous","earlier","oldlist","june1","previouslist"]
+};
+
+var STOP = {"what":1,"whats":1,"is":1,"the":1,"of":1,"for":1,"price":1,"rate":1,"rates":1,"prices":1,
+  "cost":1,"tell":1,"me":1,"give":1,"show":1,"a":1,"an":1,"in":1,"on":1,"size":1,"sizes":1,"please":1,
+  "how":1,"much":1,"do":1,"does":1,"and":1,"per":1,"rupees":1,"rs":1,"list":1,"pricelist":1,"number":1,
+  "cm":1,"inch":1,"inches":1,"to":1,"about":1};
+
+function norm(s){
+  return String(s||"").toLowerCase()
+    .replace(/[₹]/g," rupees ")
+    .replace(/[^a-z0-9\-\/ ]/g," ")
+    .replace(/\s+/g," ").trim();
+}
+function tokenise(s){
+  return norm(s).split(/[ \/]+/).filter(Boolean);
+}
+function canon(t){
+  if(ALIAS[t]) return ALIAS[t];
+  var stripped = t.replace(/-/g,"");
+  if(ALIAS[stripped]) return ALIAS[stripped];
+  return stripped || t;
+}
+function itemTokens(it){
+  var raw = [it.group, it.name, it.variant, it.pack].join(" ");
+  var out = {};
+  tokenise(raw).forEach(function(t){
+    var c = canon(t); if(c && !STOP[c]) out[c] = 1;
+    if(t !== c && !STOP[t]) out[t] = 1;
+  });
+  return out;
+}
+ITEMS.forEach(function(it){ it.tok = itemTokens(it); });
+
+function lev(a,b){
+  if(a===b) return 0;
+  var m=a.length, n=b.length;
+  if(Math.abs(m-n)>1) return 2;
+  var prev=[], cur=[], i, j;
+  for(j=0;j<=n;j++) prev[j]=j;
+  for(i=1;i<=m;i++){
+    cur[0]=i;
+    for(j=1;j<=n;j++){
+      cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    }
+    for(j=0;j<=n;j++) prev[j]=cur[j];
+  }
+  return prev[n];
+}
+
+/* ---- size parsing ---- */
+var SIZE_NUMS = {
+  "45":"45-55","50":"45-55","55":"45-55","60":"60-70","65":"60-70","70":"60-70",
+  "73":"73","75":"75","80":"80-90","85":"85","90":"80-90","95":"95-100","100":"95-100",
+  "105":"105","110":"110","115":"110","120":"120"
+};
+var SIZE_WORDS = {
+  "s":"S-M-L","small":"S-M-L","m":"M-L","medium":"M-L","l":"M-L","large":"M-L",
+  "ml":"M-L","sml":"S-M-L","xl":"XL-2XL","xxl":"XL-2XL","2xl":"XL-2XL","xl2xl":"XL-2XL",
+  "3xl":"3XL","xxxl":"3XL","4xl":"4XL","xxxxl":"4XL"
+};
+function extractSize(tokens){
+  var found=null, raw=null, used={};
+  for(var i=0;i<tokens.length;i++){
+    var t=tokens[i];
+    if(/^\d{2,3}-\d{2,3}$/.test(t)){ found=t; used[i]=1; continue; }
+    if(/^\d{2,3}$/.test(t) && SIZE_NUMS[t]){
+      /* "80 90" spoken as two tokens */
+      if(i+1<tokens.length && /^\d{2,3}$/.test(tokens[i+1]) && SIZE_NUMS[tokens[i+1]]===SIZE_NUMS[t]){
+        used[i+1]=1;
+      }
+      found=SIZE_NUMS[t]; raw=t; used[i]=1; continue;
+    }
+    var w=t.replace(/-/g,"");
+    if(SIZE_WORDS[w]){ found=SIZE_WORDS[w]; used[i]=1; }
+  }
+  return {size:found, raw:raw, used:used};
+}
+function resolveSize(sizes, want, raw){
+  if(!want) return -1;
+  var i = sizes.indexOf(want);
+  if(i>=0) return i;
+  if(raw){ i = sizes.indexOf(raw); if(i>=0) return i; }
+  /* 73 / 75 are the same top kids size across the two sheets */
+  if(want==="73" && sizes.indexOf("75")>=0) return sizes.indexOf("75");
+  if(want==="75" && sizes.indexOf("73")>=0) return sizes.indexOf("73");
+  if(want==="85" && sizes.indexOf("80-90")>=0) return sizes.indexOf("80-90");
+  if(want==="S-M-L" && sizes.indexOf("M-L")>=0) return sizes.indexOf("M-L");
+  if(want==="M-L" && sizes.indexOf("S-M-L")>=0) return sizes.indexOf("S-M-L");
+  return -1;
+}
+
+/* ---- scoring ---- */
+function search(query, listId){
+  var toks = tokenise(query);
+  var sz = extractSize(toks);
+  var listHint = null, qTok = [];
+  toks.forEach(function(t,i){
+    if(sz.used[i]) return;
+    var c = canon(t);
+    for(var k in LIST_WORDS){
+      if(LIST_WORDS[k].indexOf(t)>=0 || LIST_WORDS[k].indexOf(c)>=0){ listHint=k; return; }
+    }
+    if(STOP[c] || STOP[t]) return;
+    if(c.length>0) qTok.push(c);
+  });
+
+  /* "hi cut" / "colin sight" / "lite rib" arrive as two words */
+  var qBi = [];
+  for(var b=0;b<qTok.length-1;b++){ qBi.push(canon(qTok[b]+qTok[b+1])); }
+
+  var pool = ITEMS.filter(function(it){ return it.list === (listHint || listId); });
+  var results = [];
+  pool.forEach(function(it){
+    var score=0, hits=0;
+    qTok.forEach(function(q){
+      var best=0;
+      for(var t in it.tok){
+        if(t===q){ best=Math.max(best,3); continue; }
+        if(q.length>=4 && (t.indexOf(q)===0 || q.indexOf(t)===0)) best=Math.max(best,2.0);
+        /* a near-miss stays useful for misheard words but must never beat an exact hit
+           on a rival row — Kitto/Fitto, Contra/Candy are one letter apart */
+        if(q.length>=5 && t.length>=5 && lev(q,t)<=1) best=Math.max(best,1.4);
+      }
+      if(best>0) hits++;
+      score+=best;
+    });
+    qBi.forEach(function(q){
+      if(it.tok[q]){ score+=5; hits++; }   /* a full two-word style name is strong evidence */
+    });
+    /* two rows of the same style differ only by which sizes they cover —
+       when a size was named, favour the row that actually carries a rate there */
+    if(sz.size && hits>0){
+      var si = resolveSize(it.sizes, sz.size, sz.raw);
+      score += (si>=0 && it.prices[si]!=null) ? 0.9 : -0.9;
+    }
+    if(hits>0) results.push({it:it, score:score + hits*0.35, hits:hits});
+  });
+  results.sort(function(a,b){ return b.score-a.score || a.it.name.localeCompare(b.it.name); });
+
+  var need = Math.max(1, Math.ceil(qTok.length*0.5));
+  var strong = results.filter(function(r){ return r.hits>=need && r.score>=2.4; });
+  return {
+    query:query, tokens:qTok, size:sz.size, raw:sz.raw, listHint:listHint,
+    results:(strong.length?strong:results).slice(0,8),
+    top:(strong.length?strong:results)[0] || null
+  };
+}
+
+/* twin of an item in the other list */
+function twin(it){
+  var other = it.list==="aug" ? "jun" : "aug";
+  var cands = ITEMS.filter(function(o){
+    return o.list===other && norm(o.name)===norm(it.name) && norm(o.variant)===norm(it.variant);
+  });
+  if(!cands.length) return null;
+  var exact = cands.filter(function(o){ return norm(o.pack)===norm(it.pack); });
+  return (exact.length?exact:cands)[0];
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+var S = {
+  list:null,            /* "aug" | "jun" | "both" */
+  askedThisSession:false,
+  alwaysAsk:true,
+  speak:true,
+  speakAllSizes:true,
+  current:null,         /* {item, sizeIdx} */
+};
+function load(){
+  try{
+    var raw = localStorage.getItem("nlrf.v1");
+    if(raw){ var o=JSON.parse(raw);
+      if(o.alwaysAsk!==undefined) S.alwaysAsk=!!o.alwaysAsk;
+      if(o.speak!==undefined) S.speak=!!o.speak;
+      if(o.speakAllSizes!==undefined) S.speakAllSizes=!!o.speakAllSizes;
+      if(!S.alwaysAsk && o.list) S.list=o.list;
+    }
+  }catch(e){}
+}
+function save(){
+  try{ localStorage.setItem("nlrf.v1", JSON.stringify({
+    alwaysAsk:S.alwaysAsk, speak:S.speak, speakAllSizes:S.speakAllSizes, list:S.list
+  })); }catch(e){}
+}
+load();
+if(!S.list) S.list = "aug";   /* a list is always shown; the first query still confirms it */
+
+function listById(id){ for(var i=0;i<LISTS.length;i++) if(LISTS[i].id===id) return LISTS[i]; return null; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ============================================================
+   VOICE OUT
+   ============================================================ */
+var voice = null;
+function pickVoice(){
+  if(!window.speechSynthesis) return;
+  var vs = speechSynthesis.getVoices()||[];
+  voice = vs.filter(function(v){return /en[-_]IN/i.test(v.lang);})[0]
+       || vs.filter(function(v){return /en[-_]GB/i.test(v.lang);})[0]
+       || vs.filter(function(v){return /^en/i.test(v.lang);})[0] || null;
+}
+if(window.speechSynthesis){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function say(text){
+  if(!S.speak || !window.speechSynthesis || !text) return;
+  try{
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    if(voice) u.voice = voice;
+    u.lang = voice ? voice.lang : "en-IN";
+    u.rate = 1.02; u.pitch = 1;
+    speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+/* ============================================================
+   RENDER — answer
+   ============================================================ */
+var answerEl = document.getElementById("answer");
+
+function priceOf(it, idx){ return (idx>=0 && idx<it.prices.length) ? it.prices[idx] : null; }
+
+function sizeLadderSentence(it){
+  var parts=[];
+  it.sizes.forEach(function(s,i){
+    var p=it.prices[i]; if(p==null) return;
+    parts.push(s.replace("-"," to ")+", "+p);
+  });
+  return parts.join(". ");
+}
+
+function renderAnswer(item, sizeIdx, opts){
+  opts = opts || {};
+  S.current = {item:item, sizeIdx:sizeIdx};
+  var L = listById(item.list);
+  var other = twin(item);
+  var p = priceOf(item, sizeIdx);
+  var compareMode = (S.list==="both");
+
+  var html = '<div class="card">';
+
+  html += '<div class="card-head"><div class="eyebrow">'
+        + '<span>'+esc(item.group)+'</span>'
+        + '<span class="badge '+(item.list==="aug"?"live":"arch")+'">'+esc(L.short)+'</span>'
+        + '</div>'
+        + '<div class="prodname">'+esc(item.name)+'</div>'
+        + '<div class="prodsub">'+esc([item.variant,item.pack].filter(Boolean).join(" · "))+'</div></div>';
+
+  /* headline price */
+  var szLabel, cap;
+  if(sizeIdx>=0 && p!=null){ szLabel = "Size "+item.sizes[sizeIdx]; cap = "Net rate per piece"; }
+  else if(sizeIdx>=0 && p==null){ szLabel = "Size "+item.sizes[sizeIdx]; cap = "Not offered in this size"; }
+  else { szLabel = "Pick a size"; cap = "Net rate per piece"; }
+
+  html += '<div class="pricewrap">'
+        + '<div class="price">'+(p!=null ? '<span class="cur">₹</span>'+p : '<span class="cur">—</span>')+'</div>'
+        + '<div class="pricemeta"><span class="sz">'+esc(szLabel)+'</span><span class="cap">'+esc(cap)+'</span></div>'
+        + '</div>';
+
+  /* size chips */
+  html += '<div class="sizerow" role="group" aria-label="Sizes">';
+  item.sizes.forEach(function(s,i){
+    var v = item.prices[i];
+    html += '<button class="szbtn'+(v==null?" na":"")+'" data-sz="'+i+'" aria-pressed="'+(i===sizeIdx)+'">'
+          + '<span class="l">'+esc(s)+'</span><span class="v">'+(v==null?"—":v)+'</span></button>';
+  });
+  html += '</div>';
+
+  /* facts */
+  html += '<div class="factrow">';
+  html += '<div class="fact mrp"><div class="l">'+esc(item.mrpLabel)+'</div><div class="v">₹'+item.mrp+'</div></div>';
+  if(item.packOf) html += '<div class="fact"><div class="l">Pack of</div><div class="v">'+item.packOf+'</div></div>';
+  html += '<div class="fact"><div class="l">Price list</div><div class="v" style="font-size:14px">'+esc(L.short)+'</div></div>';
+  html += '</div>';
+
+  /* the other list */
+  if(other){
+    var oi = resolveSize(other.sizes, sizeIdx>=0 ? item.sizes[sizeIdx] : null);
+    var op = priceOf(other, oi);
+    var OL = listById(other.list);
+    if(op!=null && p!=null && op!==p){
+      var d = p-op, up = d>0;
+      html += '<div class="compare"><div class="d"><span>'+esc(OL.short)+'</span>'
+            + '<strong class="num">₹'+op+'</strong></div>'
+            + '<span class="delta '+(up?"up":"down")+'">'+(up?"▲ +":"▼ ")+d+' vs then</span></div>';
+    } else if(op!=null && p!=null && op===p){
+      html += '<div class="compare"><div class="d"><span>'+esc(OL.short)+'</span>'
+            + '<strong class="num">₹'+op+'</strong></div><span style="color:var(--muted)">Unchanged</span></div>';
+    } else if(compareMode || opts.forceCompare){
+      html += '<div class="compare"><div class="d"><span>'+esc(OL.short)+'</span>'
+            + '<strong class="num">'+(op==null?"—":"₹"+op)+'</strong></div>'
+            + '<span style="color:var(--muted)">'+(op==null?"Not in that list":"")+'</span></div>';
+    }
+  } else {
+    html += '<div class="compare"><span style="color:var(--muted)">Not listed in the '
+          + (item.list==="aug" ? "01 Jun 2026" : "20 Aug 2026") + ' sheet</span></div>';
+  }
+
+  if(item.note){
+    html += '<div class="flag"><span>⚑</span><span><b>Check this one.</b> '+esc(item.note)+'</span></div>';
+  }
+
+  html += '</div>';
+
+  /* full twin card in compare mode */
+  if(compareMode && other){
+    var oi2 = resolveSize(other.sizes, sizeIdx>=0 ? item.sizes[sizeIdx] : null);
+    html += renderMiniCard(other, oi2);
+  }
+
+  answerEl.innerHTML = html;
+
+  answerEl.querySelectorAll(".szbtn[data-sz]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var i = +b.getAttribute("data-sz");
+      renderAnswer(item, i, {spoken:false});
+      var v = item.prices[i];
+      say(v==null ? item.name+", size "+item.sizes[i]+" is not available."
+                  : item.name+", size "+item.sizes[i]+", "+v+" rupees.");
+    });
+  });
+
+  if(opts.speakNow) speakAnswer(item, sizeIdx);
+  answerEl.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+
+function renderMiniCard(it, sizeIdx){
+  var L = listById(it.list);
+  var p = priceOf(it, sizeIdx);
+  var h = '<div class="card"><div class="card-head"><div class="eyebrow"><span>'+esc(it.group)+'</span>'
+        + '<span class="badge '+(it.list==="aug"?"live":"arch")+'">'+esc(L.short)+'</span></div>'
+        + '<div class="prodname">'+esc(it.name)+'</div>'
+        + '<div class="prodsub">'+esc([it.variant,it.pack].filter(Boolean).join(" · "))+'</div></div>';
+  h += '<div class="pricewrap"><div class="price">'+(p!=null?'<span class="cur">₹</span>'+p:'<span class="cur">—</span>')
+     + '</div><div class="pricemeta"><span class="sz">'+(sizeIdx>=0?"Size "+esc(it.sizes[sizeIdx]):"Pick a size")
+     + '</span><span class="cap">Net rate per piece</span></div></div>';
+  h += '<div class="sizerow">';
+  it.sizes.forEach(function(s,i){
+    var v=it.prices[i];
+    h += '<div class="szbtn'+(v==null?" na":"")+'"'+(i===sizeIdx?' aria-pressed="true"':'')+'>'
+       + '<span class="l">'+esc(s)+'</span><span class="v">'+(v==null?"—":v)+'</span></div>';
+  });
+  h += '</div>';
+  h += '<div class="factrow"><div class="fact mrp"><div class="l">'+esc(it.mrpLabel)+'</div><div class="v">₹'+it.mrp+'</div></div>';
+  if(it.packOf) h += '<div class="fact"><div class="l">Pack of</div><div class="v">'+it.packOf+'</div></div>';
+  h += '<div class="fact"><div class="l">Price list</div><div class="v" style="font-size:14px">'+esc(L.short)+'</div></div></div>';
+  if(it.note) h += '<div class="flag"><span>⚑</span><span><b>Check this one.</b> '+esc(it.note)+'</span></div>';
+  h += '</div>';
+  return h;
+}
+
+function speakAnswer(item, sizeIdx){
+  var L = listById(item.list);
+  var lead = item.name + (item.variant ? ", "+item.variant : "");
+  if(sizeIdx>=0){
+    var p = item.prices[sizeIdx];
+    if(p==null){ say(lead+" is not made in size "+item.sizes[sizeIdx]+"."); return; }
+    var msg = lead+", size "+item.sizes[sizeIdx].replace("-"," to ")+", "+p+" rupees.";
+    var other = twin(item);
+    if(other){
+      var oi = resolveSize(other.sizes, item.sizes[sizeIdx]);
+      var op = priceOf(other, oi);
+      if(op!=null && op!==p) msg += " "+listById(other.list).short.replace(/(\d+) (\w+) (\d+)/,"$2")+" rate was "+op+".";
+    }
+    say(msg);
+  } else if(S.speakAllSizes){
+    say(lead+", "+L.short+". "+sizeLadderSentence(item)+" rupees.");
+  } else {
+    var i = item.prices.findIndex(function(v){return v!=null;});
+    say(lead+", size "+item.sizes[i]+", "+item.prices[i]+" rupees. Say a size for the rest.");
+  }
+}
+
+function renderPicker(res){
+  /* price each candidate at the size that was asked for — when they all agree,
+     the rate can be given straight away and the tap is only about the variant */
+  var priced = res.results.map(function(r){
+    var i = resolveSize(r.it.sizes, res.size, res.raw);
+    return (i>=0) ? r.it.prices[i] : null;
+  });
+  var known = priced.filter(function(v){ return v!=null; });
+  var allSame = res.size && known.length===priced.length && known.every(function(v){ return v===known[0]; });
+
+  var head = allSame
+    ? '<div class="prodname" style="font-size:17px">\u20b9'+known[0]+' \u2014 same rate for all '+res.results.length+'</div>'
+      + '<div class="prodsub">Tap the exact one to see its full size ladder.</div>'
+    : '<div class="prodname" style="font-size:17px">Which one?</div>'
+      + '<div class="prodsub">These rates differ \u2014 pick the right style before you quote.</div>';
+
+  var html = '<div class="card"><div class="card-head"><div class="eyebrow">'
+           + res.results.length+' close matches'+(res.size?' \u00b7 size '+esc(res.size):'')+'</div>'
+           + head + '</div><div class="pick">';
+  res.results.forEach(function(r,i){
+    var it = r.it, L = listById(it.list);
+    var sub = [it.group, it.variant, it.pack].filter(Boolean).join(" \u00b7 ");
+    var pv = priced[i];
+    html += '<button class="pickrow" data-i="'+i+'"><span><span class="nm">'+esc(it.name)+'</span>'
+          + '<span class="sb">'+esc(sub)+' \u00b7 '+esc(L.short)+'</span></span>'
+          + '<span class="num" style="font-weight:700;font-size:16px">'
+          + (pv==null?'<span style="color:var(--muted)">\u2014</span>':'\u20b9'+pv)
+          + ' <span class="ar">\u203a</span></span></button>';
+  });
+  html += '</div></div>';
+  answerEl.innerHTML = html;
+  answerEl.querySelectorAll(".pickrow").forEach(function(b){
+    b.addEventListener("click", function(){
+      var it = res.results[+b.getAttribute("data-i")].it;
+      renderAnswer(it, resolveSize(it.sizes, res.size, res.raw), {speakNow:true});
+    });
+  });
+  say(allSame
+    ? known[0]+" rupees, for all "+res.results.length+" of these. Tap one for the full size list."
+    : "I found "+res.results.length+" close matches with different rates. Tap the right one.");
+  answerEl.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+
+function renderNothing(q){
+  answerEl.innerHTML = '<div class="card"><div class="card-head">'
+    + '<div class="eyebrow">No match</div>'
+    + '<div class="prodname" style="font-size:17px">Nothing found for &ldquo;'+esc(q)+'&rdquo;</div>'
+    + '<div class="prodsub">Try the brand plus the style — &ldquo;Colinsight trunk 95&rdquo;, &ldquo;Loria camisole 105&rdquo;, '
+    + '&ldquo;Just Joey magic vest 60&rdquo;. Or open the full price list below.</div></div></div>';
+  say("I could not find that. Try saying the brand and the style, or open the full price list.");
+}
+
+function renderIdle(){
+  answerEl.innerHTML = '<div class="hint"><span style="font-size:17px;line-height:1.1">🎤</span>'
+    + '<span>Tap the mic and say a product. <b>“Gold White RN size 90”</b> gives you one rate; '
+    + '<b>“Colinsight trunk”</b> gives you the whole size ladder. Add <span class="k">June</span> or '
+    + '<span class="k">August</span> to any question to force a list.</span></div>';
+}
+
+/* ============================================================
+   BROWSE
+   ============================================================ */
+var browseEl = document.getElementById("browse");
+var browseHead = document.getElementById("browseHead");
+
+function renderBrowse(){
+  var id = (S.list==="both"||!S.list) ? "aug" : S.list;
+  var L = listById(id);
+  browseHead.textContent = "Full price list — "+L.short;
+  var html = "";
+  L.groups.forEach(function(g, gi){
+    html += '<details class="grp"><summary><span>'+esc(g.n)+'</span><span class="cnt">'+g.rows.length+' styles</span></summary>'
+          + '<div class="tblwrap"><table><thead><tr><th class="nm">Style</th>';
+    g.sizes.forEach(function(s){ html += '<th>'+esc(s)+'</th>'; });
+    if(g.rows.some(function(r){return r[5];})) html += '<th>Pack</th>';
+    html += '<th class="mrp">'+esc(g.mrp.replace("MRP ",""))+'</th></tr></thead><tbody>';
+    g.rows.forEach(function(r, ri){
+      html += '<tr data-g="'+gi+'" data-r="'+ri+'"><td class="nm">'+esc(r[0])
+            + (r[1]||r[2] ? '<span class="vr">'+esc([r[1],r[2]].filter(Boolean).join(" · "))+'</span>' : '')+'</td>';
+      g.sizes.forEach(function(s,i){
+        var v=r[3][i];
+        html += '<td class="p'+(v==null?" off":"")+'">'+(v==null?"–":v)+'</td>';
+      });
+      if(g.rows.some(function(x){return x[5];})) html += '<td class="p off">'+(r[5]||"–")+'</td>';
+      html += '<td class="p mrp">'+r[4]+'</td></tr>';
+    });
+    html += '</tbody></table></div></details>';
+  });
+
+  html += '<details class="grp" style="margin-top:12px"><summary><span>Terms &amp; conditions</span>'
+        + '<span class="cnt">'+esc(L.long)+'</span></summary><div class="terms"><ol>';
+  L.terms.forEach(function(t){ html += '<li>'+esc(t)+'</li>'; });
+  html += '</ol></div></details>';
+
+  browseEl.innerHTML = html;
+
+  browseEl.querySelectorAll("tbody tr").forEach(function(tr){
+    tr.style.cursor="pointer";
+    tr.addEventListener("click", function(){
+      var g = L.groups[+tr.getAttribute("data-g")];
+      var ri = +tr.getAttribute("data-r");
+      var it = ITEMS.filter(function(x){ return x.list===L.id && x.group===g.n && x.rowIndex===ri; })[0];
+      if(it){ renderAnswer(it, -1, {speakNow:true}); window.scrollTo({top:0, behavior:"smooth"}); }
+    });
+  });
+}
+
+/* ============================================================
+   LIST PICKER
+   ============================================================ */
+var chips = {aug:document.getElementById("chipAug"), jun:document.getElementById("chipJun"), both:document.getElementById("chipBoth")};
+function paintChips(){
+  for(var k in chips) chips[k].setAttribute("aria-pressed", String(S.list===k));
+}
+Object.keys(chips).forEach(function(k){
+  chips[k].addEventListener("click", function(){
+    S.list = k; S.askedThisSession = true; save(); paintChips(); renderBrowse();
+    if(S.current && S.current.item){
+      var it = S.current.item;
+      if(k!=="both" && it.list!==k){
+        var t = twin(it);
+        if(t){ renderAnswer(t, resolveSize(t.sizes, S.current.sizeIdx>=0?it.sizes[S.current.sizeIdx]:null), {speakNow:true}); return; }
+      }
+      renderAnswer(it, S.current.sizeIdx, {});
+    }
+  });
+});
+paintChips();
+renderBrowse();
+renderIdle();
+
+/* ============================================================
+   "WHICH LIST?" SHEET
+   ============================================================ */
+var sheetHost = document.getElementById("sheetHost");
+function askWhichList(then){
+  sheetHost.innerHTML =
+    '<div class="sheet" role="dialog" aria-modal="true" aria-label="Which price list">'
+  + '<div class="sheetbox">'
+  + '<h2>Which price list?</h2>'
+  + '<p>Tell me which sheet to quote from. I will remember it for the rest of this session — tap the bar at the top to switch any time.</p>'
+  + '<button class="bigopt" data-pick="aug"><span><span class="t">20 August 2026</span><span class="s">Current list</span></span><span class="ar">›</span></button>'
+  + '<button class="bigopt" data-pick="jun"><span><span class="t">01 June 2026</span><span class="s">Previous list</span></span><span class="ar">›</span></button>'
+  + '<button class="bigopt" data-pick="both"><span><span class="t">Show me both</span><span class="s">Side by side</span></span><span class="ar">›</span></button>'
+  + '<label class="sheetfoot"><input type="checkbox" id="dontAsk"> Don\'t ask again — always start on 20 Aug 2026</label>'
+  + '</div></div>';
+  say("Which price list — August twentieth, or June first?");
+  sheetHost.querySelectorAll(".bigopt").forEach(function(b){
+    b.addEventListener("click", function(){
+      S.list = b.getAttribute("data-pick");
+      S.askedThisSession = true;
+      var dn = document.getElementById("dontAsk");
+      if(dn && dn.checked) S.alwaysAsk = false;
+      save(); sheetHost.innerHTML=""; paintChips(); renderBrowse();
+      if(then) then();
+    });
+  });
+}
+
+/* ============================================================
+   ASK
+   ============================================================ */
+function runQuery(q){
+  q = String(q||"").trim();
+  if(!q) return;
+  showHeard(q);
+
+  var pre = tokenise(q), forced = null;
+  pre.forEach(function(t){
+    for(var k in LIST_WORDS){ if(LIST_WORDS[k].indexOf(t)>=0) forced = k; }
+  });
+
+  if(!forced && S.alwaysAsk && !S.askedThisSession){ askWhichList(function(){ runQuery(q); }); return; }
+
+  var base = forced || (S.list==="both" ? "aug" : S.list);
+  var res = search(q, base);
+
+  if(!res.top){ renderNothing(q); return; }
+  /* Answer straight out when the winner is unambiguous: either a clear score gap,
+     or it simply matched more of what was said than anything else did. */
+  var clear = res.results.length===1 ||
+              (res.results.length>1 && (res.results[0].score - res.results[1].score >= 1.6
+                                        || res.results[0].hits > res.results[1].hits));
+  if(clear){
+    var it = res.top.it;
+    renderAnswer(it, resolveSize(it.sizes, res.size, res.raw), {speakNow:true, forceCompare:!!forced});
+  } else {
+    renderPicker(res);
+  }
+}
+
+var heardEl = document.getElementById("heard");
+function showHeard(txt, live){
+  heardEl.innerHTML = txt ? (live?'<span>Listening…</span> ':'<span>Heard:</span> ')+'<b>'+esc(txt)+'</b>' : "";
+}
+
+var askEl = document.getElementById("ask");
+askEl.addEventListener("keydown", function(e){
+  if(e.key==="Enter"){ e.preventDefault(); runQuery(askEl.value); askEl.blur(); }
+});
+
+/* ============================================================
+   VOICE IN
+   ============================================================ */
+var micEl = document.getElementById("mic");
+var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+var rec = null, listening = false;
+
+if(!SR){
+  micEl.disabled = true;
+  micEl.style.opacity = ".4";
+  micEl.title = "This browser has no speech input — type instead";
+  heardEl.innerHTML = '<span>Voice input is not available in this browser. Type the product instead — Chrome on Android supports voice.</span>';
+} else {
+  micEl.addEventListener("click", function(){
+    if(listening){ try{ rec.stop(); }catch(e){} return; }
+    try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+    rec = new SR();
+    rec.lang = "en-IN";
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.maxAlternatives = 3;
+    var finalText = "";
+
+    rec.onstart = function(){ listening = true; micEl.setAttribute("data-state","listening"); showHeard("", true); };
+    rec.onresult = function(e){
+      var interim = "";
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      showHeard(finalText || interim, !finalText);
+    };
+    rec.onerror = function(e){
+      listening=false; micEl.setAttribute("data-state","idle");
+      var m = e.error==="not-allowed" ? "Microphone blocked. Allow mic access for this page in your browser settings."
+            : e.error==="no-speech" ? "I didn't catch that — tap the mic and speak again."
+            : e.error==="network" ? "Voice needs a network connection. Type the product instead."
+            : "Voice input stopped. Tap the mic to retry.";
+      heardEl.innerHTML = '<span>'+esc(m)+'</span>';
+    };
+    rec.onend = function(){
+      listening=false; micEl.setAttribute("data-state","idle");
+      if(finalText.trim()) runQuery(finalText.trim());
+    };
+    try{ rec.start(); }catch(e){}
+  });
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+document.getElementById("settingsBtn").addEventListener("click", function(){
+  sheetHost.innerHTML =
+    '<div class="sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="sheetbox">'
+  + '<h2>Settings</h2><p>Small things that change how fast the answer comes back.</p>'
+  + '<div class="card">'
+  + '<label class="settingrow"><span>Ask which price list each session'
+  + '<span class="d">Off means every question uses whichever list is selected up top.</span></span>'
+  + '<input class="sw" type="checkbox" id="setAsk"'+(S.alwaysAsk?" checked":"")+'></label>'
+  + '<label class="settingrow"><span>Speak the answer'
+  + '<span class="d">Turn off in a noisy market and just read the screen.</span></span>'
+  + '<input class="sw" type="checkbox" id="setSpeak"'+(S.speak?" checked":"")+'></label>'
+  + '<label class="settingrow"><span>Read out every size'
+  + '<span class="d">Off reads only the first size when you do not name one.</span></span>'
+  + '<input class="sw" type="checkbox" id="setAll"'+(S.speakAllSizes?" checked":"")+'></label>'
+  + '</div>'
+  + '<button class="bigopt" id="closeSet" style="margin-top:12px"><span><span class="t">Done</span>'
+  + '<span class="s">'+ITEMS.length+' rates loaded · works offline</span></span><span class="ar">✓</span></button>'
+  + '</div></div>';
+  document.getElementById("setAsk").addEventListener("change", function(e){ S.alwaysAsk=e.target.checked; save(); });
+  document.getElementById("setSpeak").addEventListener("change", function(e){ S.speak=e.target.checked; save(); });
+  document.getElementById("setAll").addEventListener("change", function(e){ S.speakAllSizes=e.target.checked; save(); });
+  document.getElementById("closeSet").addEventListener("click", function(){ sheetHost.innerHTML=""; });
+});
+
+/* open on a real example so the tool shows what it does */
+(function(){
+  var demo = ITEMS.filter(function(x){ return x.list==="aug" && x.group==="Skipper Men" && x.name==="Gold White" && x.variant==="RN"; })[0];
+  if(demo){
+    var saveSpeak = S.speak; S.speak = false;
+    renderAnswer(demo, 1, {});
+    S.speak = saveSpeak;
+    answerEl.insertAdjacentHTML("afterbegin",
+      '<div class="hint" style="margin-bottom:12px"><span style="font-size:17px;line-height:1.1">🎤</span>'
+    + '<span><b>Example shown below.</b> Tap the mic and say a product — <span class="k">Gold White RN 90</span>, '
+    + '<span class="k">Colinsight trunk 105</span>, <span class="k">Loria camisole</span>. '
+    + 'Say <span class="k">June</span> or <span class="k">August</span> in the question to force a list.</span></div>');
+  } else { renderIdle(); }
+})();
+</script>
