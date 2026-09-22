@@ -248,8 +248,15 @@
   .heard{
     max-width:640px; margin:0 auto 7px; font-size:12.5px; color:var(--muted);
     display:flex; align-items:center; gap:7px; min-height:17px;
+    flex-wrap:wrap; line-height:1.4;
   }
   .heard b{color:var(--ink); font-weight:600}
+  .fixbtn{
+    flex:0 0 auto; background:var(--navy); color:#fff; border:0; border-radius:8px;
+    padding:5px 10px; font-size:12px; font-weight:600;
+  }
+  :root[data-theme="dark"] .fixbtn{color:#12141A}
+  @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]) .fixbtn{color:#12141A} }
 
   /* ---------- date prompt sheet ---------- */
   .sheet{position:fixed; inset:0; z-index:90; display:grid; place-items:end center}
@@ -1261,46 +1268,116 @@ var micEl = document.getElementById("mic");
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 var rec = null, listening = false;
 
-if(!SR){
-  micEl.disabled = true;
-  micEl.style.opacity = ".4";
-  micEl.title = "This browser has no speech input — type instead";
-  heardEl.innerHTML = '<span>Voice input is not available in this browser. Type the product instead — Chrome on Android supports voice.</span>';
-} else {
-  micEl.addEventListener("click", function(){
-    if(listening){ try{ rec.stop(); }catch(e){} return; }
-    try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
-    rec = new SR();
-    rec.lang = "en-IN";
-    rec.interimResults = true;
-    rec.continuous = false;
-    rec.maxAlternatives = 3;
-    var finalText = "";
+var FRAMED = (function(){ try{ return window.self !== window.top; }catch(e){ return true; } })();
 
-    rec.onstart = function(){ listening = true; micEl.setAttribute("data-state","listening"); showHeard("", true); };
-    rec.onresult = function(e){
-      var interim = "";
-      for(var i=e.resultIndex;i<e.results.length;i++){
-        if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
-        else interim += e.results[i][0].transcript;
-      }
-      showHeard(finalText || interim, !finalText);
-    };
-    rec.onerror = function(e){
-      listening=false; micEl.setAttribute("data-state","idle");
-      var m = e.error==="not-allowed" ? "Microphone blocked. Allow mic access for this page in your browser settings."
-            : e.error==="no-speech" ? "I didn't catch that — tap the mic and speak again."
-            : e.error==="network" ? "Voice needs a network connection. Type the product instead."
-            : "Voice input stopped. Tap the mic to retry.";
-      heardEl.innerHTML = '<span>'+esc(m)+'</span>';
-    };
-    rec.onend = function(){
-      listening=false; micEl.setAttribute("data-state","idle");
-      if(finalText.trim()) runQuery(finalText.trim());
-    };
-    try{ rec.start(); }catch(e){}
+/* An embedded page only gets the microphone if the page embedding it delegates
+   that permission. When it does not, no amount of granting in browser settings
+   reaches this page — so say that, instead of blaming the browser. */
+function micDelegated(){
+  try{
+    var pp = document.permissionsPolicy || document.featurePolicy;
+    if(pp && typeof pp.allowsFeature === "function") return pp.allowsFeature("microphone");
+  }catch(e){}
+  return null;   /* can't tell */
+}
+
+function notice(msg, offerTab){
+  var h = '<span>'+esc(msg)+'</span>';
+  if(offerTab) h += '<button class="fixbtn" id="openTab">Open in its own tab</button>';
+  heardEl.innerHTML = h;
+  var t = document.getElementById("openTab");
+  if(t) t.addEventListener("click", function(){
+    try{ window.open(location.href, "_blank", "noopener"); }
+    catch(e){ notice("Copy this page's address into a new browser tab and open it there.", false); }
   });
 }
+
+function explainDenial(err){
+  var name = err && err.name ? err.name : "";
+  if(name==="NotFoundError" || name==="DevicesNotFoundError"){
+    notice("No microphone found on this device.", false); return;
+  }
+  if(name==="NotReadableError" || name==="TrackStartError"){
+    notice("Another app is holding the microphone. Close it and tap the mic again.", false); return;
+  }
+  if(micDelegated()===false || FRAMED){
+    notice("This page is embedded in another site, which is not passing the microphone through — "
+         + "granting access in your browser settings cannot reach it. Open the page in its own tab, "
+         + "or type the product below.", true);
+    return;
+  }
+  notice("The browser denied microphone access for this page. Check the padlock in the address bar "
+       + "and allow the microphone, then tap the mic again.", false);
+}
+
+/* Work out up front whether voice can work at all, and say so plainly. */
+(function(){
+  if(!SR){
+    micEl.disabled = true; micEl.style.opacity = ".4";
+    micEl.title = "This browser has no speech input — type instead";
+    notice("This browser has no voice input. Type the product below — Chrome on Android has it.", false);
+    return;
+  }
+  if(!window.isSecureContext){
+    micEl.disabled = true; micEl.style.opacity = ".4";
+    notice("Voice input needs a secure (https) page. Type the product below.", false);
+    return;
+  }
+  if(micDelegated()===false){
+    notice("This page is embedded in another site, which is not passing the microphone through, "
+         + "so voice cannot start here. Open it in its own tab — everything else works as it is.", true);
+  }
+})();
+
+function startSR(){
+  try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+  rec = new SR();
+  rec.lang = "en-IN";
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 3;
+  var finalText = "";
+
+  rec.onstart = function(){ listening = true; micEl.setAttribute("data-state","listening"); showHeard("", true); };
+  rec.onresult = function(e){
+    var interim = "";
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    showHeard(finalText || interim, !finalText);
+  };
+  rec.onerror = function(e){
+    listening=false; micEl.setAttribute("data-state","idle");
+    if(e.error==="not-allowed" || e.error==="service-not-allowed"){
+      /* find out why, rather than assuming the user withheld permission */
+      if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+        navigator.mediaDevices.getUserMedia({audio:true}).then(function(st){
+          st.getTracks().forEach(function(t){ t.stop(); });
+          notice("The microphone is available but the speech service was refused. Tap the mic to try again.", FRAMED);
+        }).catch(explainDenial);
+      } else { explainDenial({name:"NotAllowedError"}); }
+      return;
+    }
+    notice(e.error==="no-speech" ? "I didn't catch that — tap the mic and speak again."
+         : e.error==="audio-capture" ? "No microphone found on this device."
+         : e.error==="network" ? "Voice needs a network connection. Type the product below."
+         : "Voice input stopped. Tap the mic to retry.", false);
+  };
+  rec.onend = function(){
+    listening=false; micEl.setAttribute("data-state","idle");
+    if(finalText.trim()) runQuery(finalText.trim());
+  };
+  try{ rec.start(); }
+  catch(e){ listening=false; micEl.setAttribute("data-state","idle"); explainDenial(e); }
+}
+
+micEl.addEventListener("click", function(){
+  if(micEl.disabled) return;
+  if(listening){ try{ rec.stop(); }catch(e){} return; }
+  startSR();
+});
+
 
 /* ============================================================
    SETTINGS
