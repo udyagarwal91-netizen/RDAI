@@ -1,0 +1,11 @@
+{
+  "name": "Voice Order Book",
+  "short_name": "Order Book",
+  "description": "Take Skipper Hosiery orders by voice and share them as order-form JPEGs.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef1f8",
+  "theme_color": "#1f2f8f",
+  "icons": [{ "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

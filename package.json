@@ -1,0 +1,11 @@
+{
+  "name": "rdai-voice-order-booking",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Voice order booking for Skipper Hosiery order forms",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "python3 -m http.server 8080"
+  }
+}

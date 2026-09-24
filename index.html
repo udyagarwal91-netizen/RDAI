@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Voice Order Book</title>
+  <meta name="description" content="Take Skipper Hosiery orders by voice and share them as order-form JPEGs.">
+  <meta name="theme-color" content="#1f2f8f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">RD</span>
+      <div>
+        <h1>Voice Order Book</h1>
+        <p>Skipper Hosiery · NE price list 15-05-2026</p>
+      </div>
+    </div>
+    <nav>
+      <button class="icon-btn" id="btn-orders" title="Saved orders" aria-label="Saved orders">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v4H4zM4 10h16v10H4z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-prices" title="Price list" aria-label="Price list">
+        <svg viewBox="0 0 24 24"><path d="M3 12l9-9h9v9l-9 9z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="8" r="1.8" fill="currentColor"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 1. Customer -->
+    <section class="card" id="customer-card">
+      <h2><span class="step">1</span> Customer</h2>
+      <div class="grid2">
+        <label class="span2">M/s (party)<input id="f-name" autocomplete="off" placeholder="Manoj Textiles"></label>
+        <label class="span2">Place / address<input id="f-line2" autocomplete="off" placeholder="Sibsagar"></label>
+        <label>Address line 2<input id="f-line3" autocomplete="off"></label>
+        <label>GSTIN<input id="f-gstin" autocomplete="off"></label>
+        <label>Dated<input id="f-date" autocomplete="off"></label>
+        <label>Order no.<input id="f-orderno" autocomplete="off"></label>
+        <label class="span2">Goods through (transport)<input id="f-transport" autocomplete="off"></label>
+      </div>
+    </section>
+
+    <!-- 2. Voice -->
+    <section class="card" id="voice-card">
+      <h2><span class="step">2</span> Talk to your customer</h2>
+      <div class="mic-row">
+        <button id="btn-mic" class="mic" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <span id="mic-label">Start listening</span>
+        </button>
+        <div class="mic-side">
+          <label class="inline">Language
+            <select id="f-lang">
+              <option value="en-IN">English (India) – best for Hinglish</option>
+              <option value="hi-IN">Hindi</option>
+              <option value="en-US">English (US)</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="f-live" checked> Update the order live while talking</label>
+          <p class="hint" id="mic-status">Keep the phone between you and the customer. Say product, then size and boxes: <em>“Ruby IWD 85 two, 90 three…”</em></p>
+        </div>
+      </div>
+      <label class="transcript-label">Conversation transcript <span class="hint">(you can type or correct here too)</span></label>
+      <textarea id="f-transcript" rows="6" placeholder="The conversation appears here as you speak…"></textarea>
+      <div class="interim" id="interim" aria-live="polite"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-parse">Build order from talk</button>
+        <button class="btn" id="btn-ai" title="Uses Claude (needs API key in Settings)">✨ Build with AI</button>
+        <button class="btn ghost" id="btn-clear-talk">Clear talk</button>
+      </div>
+      <div id="parse-notes" class="notes" hidden></div>
+    </section>
+
+    <!-- 3. Order -->
+    <section class="card" id="order-card">
+      <div class="card-head">
+        <h2><span class="step">3</span> Order <span class="pill" id="order-summary">0 boxes</span></h2>
+        <button class="btn small" id="btn-add-line">+ Add line</button>
+      </div>
+      <div id="lines"></div>
+      <p class="empty" id="lines-empty">No items yet. Speak the order or tap <b>+ Add line</b>.</p>
+    </section>
+
+    <!-- 4. Output -->
+    <section class="card" id="output-card">
+      <div class="card-head">
+        <h2><span class="step">4</span> Order form</h2>
+        <label class="check"><input type="checkbox" id="f-prices" checked> Add price summary</label>
+      </div>
+      <div class="preview-wrap"><img id="preview" alt="Order form preview"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-share">Share (WhatsApp…)</button>
+        <button class="btn" id="btn-download">Download JPEG</button>
+        <button class="btn" id="btn-save">Save order</button>
+        <button class="btn ghost" id="btn-new">New order</button>
+      </div>
+    </section>
+  </main>
+
+  <datalist id="catalog-list"></datalist>
+
+  <!-- Settings -->
+  <dialog id="dlg-settings">
+    <form method="dialog" class="dlg">
+      <h3>Settings</h3>
+      <label>Anthropic API key <span class="hint">(optional – enables “Build with AI”; stored only on this phone)</span>
+        <input id="s-key" type="password" autocomplete="off" placeholder="sk-ant-…">
+      </label>
+      <label>Claude model<input id="s-model" autocomplete="off"></label>
+      <label>My own styles not in the price list <span class="hint">one per line: <code>CODE | shape | rate per box</code></span>
+        <textarea id="s-custom" rows="6" placeholder="JFS 2409 | Net | 640&#10;AHW 613 | WSP (-15%) | 900"></textarea>
+      </label>
+      <div class="btn-row end">
+        <button class="btn ghost" value="cancel">Cancel</button>
+        <button class="btn primary" id="btn-settings-save" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Price list -->
+  <dialog id="dlg-prices" class="wide">
+    <div class="dlg">
+      <div class="card-head">
+        <h3>Price list (NE, 15-05-2026)</h3>
+        <button class="btn ghost small" data-close>Close</button>
+      </div>
+      <input id="price-search" placeholder="Search: ruby, lite icd, natkhat…" autocomplete="off">
+      <p class="hint">Rates per box of 10 pcs incl. GST. Sofiyaa &amp; Honey rates are per dozen. CD 2% on 30-day payment.</p>
+      <div id="price-table" class="price-table"></div>
+    </div>
+  </dialog>
+
+  <!-- Saved orders -->
+  <dialog id="dlg-orders">
+    <div class="dlg">
+      <div class="card-head">
+        <h3>Saved orders</h3>
+        <button class="btn ghost small" data-close>Close</button>
+      </div>
+      <div id="orders-list"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
