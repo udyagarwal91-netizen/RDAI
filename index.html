@@ -37,9 +37,45 @@
   </header>
 
   <main>
+    <!-- 2. Record the visit -->
+    <section class="card" id="voice-card">
+      <h2><span class="step">1</span> Record the visit</h2>
+      <div class="mic-row">
+        <button id="btn-rec" class="mic" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <span id="rec-label">Start recording</span>
+          <span id="rec-time" class="rec-time" hidden>0:00</span>
+        </button>
+        <div class="mic-side">
+          <p class="hint" id="rec-status">Tap when you enter the shop and talk normally – Hindi, Hinglish or English. Tap again when you leave: Gemini listens to the whole conversation, leaves out the small talk and builds the order.</p>
+          <label class="btn ghost small file-btn">Or pick a recording…
+            <input type="file" id="f-audio" accept="audio/*,.m4a,.opus,.ogg,.mp3,.wav,.aac" hidden>
+          </label>
+        </div>
+      </div>
+      <div id="rec-box" hidden>
+        <audio id="rec-player" controls preload="metadata"></audio>
+        <div class="btn-row">
+          <button class="btn primary" id="btn-analyze">Analyze recording</button>
+          <button class="btn ghost" id="btn-save-audio">Save audio</button>
+        </div>
+      </div>
+      <div id="analyzing" class="analyzing" hidden><span class="spinner" aria-hidden="true"></span> <span id="analyzing-text">Gemini is listening to the conversation…</span></div>
+      <div id="parse-notes" class="notes" hidden></div>
+      <details id="talk-details">
+        <summary>Conversation text</summary>
+        <textarea id="f-transcript" rows="8" placeholder="After analysis, the whole conversation appears here in English letters. You can also type or paste a conversation."></textarea>
+        <div class="btn-row">
+          <button class="btn" id="btn-reanalyze-text">Rebuild order from this text</button>
+          <button class="btn ghost" id="btn-copy-talk">Copy text</button>
+          <button class="btn ghost" id="btn-clear-talk">Clear</button>
+        </div>
+      </details>
+    </section>
+
     <!-- 1. Customer -->
     <section class="card" id="customer-card">
-      <h2><span class="step">1</span> Customer</h2>
+      <h2><span class="step">2</span> Customer <span class="hint">(filled in from the conversation)</span></h2>
       <div class="grid2">
         <label class="span2">M/s (party)<input id="f-name" autocomplete="off" placeholder="Manoj Textiles"></label>
         <label class="span2">Place / address<input id="f-line2" autocomplete="off" placeholder="Sibsagar"></label>
@@ -51,38 +87,6 @@
       </div>
     </section>
 
-    <!-- 2. Voice -->
-    <section class="card" id="voice-card">
-      <h2><span class="step">2</span> Talk to your customer</h2>
-      <div class="mic-row">
-        <button id="btn-mic" class="mic" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          <span id="mic-label">Start listening</span>
-        </button>
-        <div class="mic-side">
-          <label class="inline">Language
-            <select id="f-lang">
-              <option value="hi-IN">हिंदी Hindi – recommended</option>
-              <option value="en-IN">English (India) / Hinglish</option>
-              <option value="en-US">English (US)</option>
-            </select>
-          </label>
-          <label class="check"><input type="checkbox" id="f-live" checked> Update the order live while talking</label>
-          <p class="hint" id="mic-status">Keep the phone between you and the customer. Say product, then size and boxes: <em>“Ruby IWD pachasi mein do, nabbe mein teen…”</em> Speak Hindi, Hinglish or English; the text is written in English letters.</p>
-        </div>
-      </div>
-      <label class="transcript-label">Conversation transcript <span class="hint">(you can type or correct here too)</span></label>
-      <textarea id="f-transcript" rows="6" placeholder="The conversation appears here as you speak…"></textarea>
-      <div class="interim" id="interim" aria-live="polite"></div>
-      <div class="btn-row">
-        <button class="btn primary" id="btn-parse">Build order from talk</button>
-        <button class="btn" id="btn-ai" title="Uses Claude (needs API key in Settings)">✨ Build with AI</button>
-        <button class="btn ghost" id="btn-copy-talk">Copy text</button>
-        <button class="btn ghost" id="btn-clear-talk">Clear talk</button>
-      </div>
-      <div id="parse-notes" class="notes" hidden></div>
-    </section>
-
     <!-- 3. Order -->
     <section class="card" id="order-card">
       <div class="card-head">
@@ -90,7 +94,7 @@
         <button class="btn small" id="btn-add-line">+ Add line</button>
       </div>
       <div id="lines"></div>
-      <p class="empty" id="lines-empty">No items yet. Speak the order or tap <b>+ Add line</b>.</p>
+      <p class="empty" id="lines-empty">No items yet. Record the visit, or tap <b>+ Add line</b>.</p>
     </section>
 
     <!-- 4. Output -->
@@ -115,11 +119,11 @@
   <dialog id="dlg-settings">
     <form method="dialog" class="dlg">
       <h3>Settings</h3>
-      <label>Anthropic API key <span class="hint">(optional – enables “Build with AI”; stored only on this phone)</span>
-        <input id="s-key" type="password" autocomplete="off" placeholder="sk-ant-…">
+      <label>Gemini API key <span class="hint">(needed to analyze recordings; stored only on this phone – get one at aistudio.google.com)</span>
+        <input id="s-key" type="password" autocomplete="off" placeholder="AIza…">
       </label>
-      <label>Claude model<input id="s-model" autocomplete="off"></label>
-      <label>Words the phone hears wrong <span class="hint">one per line: <code>heard = correct</code>. Fixed in the text and the order.</span>
+      <label>Gemini model<input id="s-model" autocomplete="off"></label>
+      <label>Words that get misheard <span class="hint">one per line: <code>heard = correct</code>. Gemini is told about them.</span>
         <textarea id="s-fixes" rows="4" placeholder="up icd = ruby icd&#10;tension = natkhat"></textarea>
       </label>
       <label>My own styles not in the price list <span class="hint">one per line: <code>CODE | shape | rate per box</code></span>

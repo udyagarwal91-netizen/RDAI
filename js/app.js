@@ -1,8 +1,7 @@
 import { CATALOG, CATALOG_BY_ID, ADULT_SIZES, KIDS_SIZES } from './catalog.js';
-import { parseTranscript, setCustomProducts, newLineId, setCorrections, fixMisheard } from './parser.js';
-import { parseWithClaude, DEFAULT_MODEL } from './ai.js';
-import { Listener, speechSupported } from './speech.js';
-import { toRomanScript } from './hindi.js';
+import { parseTranscript, setCustomProducts, newLineId, setCorrections } from './parser.js';
+import { analyzeConversation, DEFAULT_GEMINI_MODEL } from './gemini.js';
+import { Recorder, recordingSupported, formatDuration, saveRecording, loadRecording } from './recorder.js';
 import { renderOrderForm, canvasToJpeg, ensureFonts } from './form-render.js';
 import { emptyOrder, lineTotals, lineRate, orderTotals, unitOf, inr } from './order.js';
 
@@ -20,18 +19,19 @@ const store = {
   },
 };
 
-let settings = { apiKey: '', model: DEFAULT_MODEL, custom: '', lang: 'hi-IN', prices: true, ...store.get('vob.settings', {}) };
-// v2: most orders are spoken in Hindi, so Hindi became the default language.
-if (!settings.v) { settings.lang = 'hi-IN'; settings.v = 2; store.set('vob.settings', settings); }
+let settings = { geminiKey: '', geminiModel: DEFAULT_GEMINI_MODEL, custom: '', fixes: '', prices: true, ...store.get('vob.settings', {}) };
+// v3: recordings are analysed by Gemini (the old live speech + Claude settings are gone)
+if ((settings.v || 0) < 3) {
+  delete settings.apiKey; delete settings.model; delete settings.lang;
+  settings.v = 3;
+  store.set('vob.settings', settings);
+}
 let order = store.get('vob.draft', null) || emptyOrder();
 // "heard = correct" lines from Settings, e.g. "up icd = ruby icd"
 function parseFixes(text) {
   return String(text || '').split('\n').map((row) => row.split('=').map((s) => s.trim())).filter((r) => r[0] && r[1]);
 }
 setCorrections(parseFixes(settings.fixes));
-// What the transcript box shows: English letters, known mishearings fixed.
-const shown = (heard) => fixMisheard(toRomanScript(heard));
-order.transcript = shown(order.transcript);
 let manualEdits = false;
 
 function parseCustomStyles(text) {
@@ -123,6 +123,7 @@ function lineHtml(line, idx) {
     </div>
     <div class="sizes">${sizes}</div>
     <div class="line-foot">${p ? `<span>${escapeHtml(p.name)}</span>` : '<span></span>'}${price}</div>
+    ${line.heard ? `<span class="heard">Heard: “${escapeHtml(line.heard)}”</span>` : ''}
   </div>`;
 }
 
@@ -218,13 +219,24 @@ $('btn-add-line').addEventListener('click', () => {
 $('catalog-list').innerHTML = CATALOG.map((p) => `<option value="${escapeHtml(labelOf(p))}">${escapeHtml(p.name)}</option>`).join('');
 
 // ---------------------------------------------------------------------------
-// Parsing
+// Results
 // ---------------------------------------------------------------------------
-function applyResult(res, { silent } = {}) {
+function knownStyleRates(lines) {
+  const known = parseCustomStyles(settings.custom);
+  for (const l of lines) {
+    if (!l.custom) continue;
+    const k = known.find((c) => c.code.replace(/\s+/g, '').toLowerCase() === l.desc.replace(/\s+/g, '').toLowerCase());
+    if (k && k.rate && !l.customRate) l.customRate = k.rate;
+  }
+}
+
+function applyResult(res) {
   const h = res.header || {};
   if (h.name && !order.customer.name) order.customer.name = h.name;
   if (h.place && !order.customer.line2) order.customer.line2 = h.place;
   if (h.transport && !order.transport) order.transport = h.transport;
+  if (res.transcript) order.transcript = res.transcript;
+  knownStyleRates(res.lines);
   order.lines = res.lines;
   manualEdits = false;
   fillFields();
@@ -234,42 +246,131 @@ function applyResult(res, { silent } = {}) {
 
   const notes = [];
   if (res.warnings.length) notes.push(`<b>Please check:</b><ul>${res.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
-  if (res.ignored.length) notes.push(`<b>Treated as conversation (not added):</b><ul>${res.ignored.slice(-6).map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
+  if (res.ignored.length) notes.push(`<b>Left out (not order talk):</b><ul>${res.ignored.slice(-6).map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
   $('parse-notes').innerHTML = notes.join('');
   $('parse-notes').hidden = !notes.length;
-  if (!silent) toast(`${res.lines.length} item${res.lines.length === 1 ? '' : 's'} found`);
+  toast(`${res.lines.length} item${res.lines.length === 1 ? '' : 's'} found`);
+  if (res.lines.length) $('order-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function runOffline({ silent } = {}) {
-  const text = $('f-transcript').value;
-  order.transcript = text;
-  if (!text.trim()) { if (!silent) toast('Nothing to read yet - start listening or type the order'); return; }
-  if (manualEdits && !silent && order.lines.length && !confirm('Rebuilding replaces the edits you made to the lines. Continue?')) return;
-  if (manualEdits && silent) return;   // never overwrite hand edits while listening
-  applyResult(parseTranscript(text), { silent });
+function geminiOptions() {
+  return {
+    apiKey: settings.geminiKey,
+    model: settings.geminiModel,
+    customStyles: parseCustomStyles(settings.custom),
+    corrections: parseFixes(settings.fixes),
+  };
 }
 
-$('btn-parse').addEventListener('click', () => runOffline());
+function busy(on, text) {
+  $('analyzing').hidden = !on;
+  if (text) $('analyzing-text').textContent = text;
+  for (const id of ['btn-analyze', 'btn-reanalyze-text', 'btn-rec']) $(id).disabled = on;
+}
 
-$('btn-ai').addEventListener('click', async () => {
-  const text = $('f-transcript').value;
-  if (!text.trim()) { toast('Nothing to read yet'); return; }
-  if (!settings.apiKey) { toast('Add your Anthropic API key in Settings first'); openSettings(); return; }
-  if (manualEdits && order.lines.length && !confirm('Rebuilding replaces the edits you made to the lines. Continue?')) return;
-  const btn = $('btn-ai');
-  btn.disabled = true;
-  btn.textContent = '✨ Reading…';
+async function analyze({ audio, text }) {
+  if (!settings.geminiKey) { toast('Add your Gemini API key in Settings first'); openSettings(); return; }
+  if (manualEdits && order.lines.length && !confirm('This replaces the changes you made to the order lines. Continue?')) return;
+  busy(true, audio ? 'Gemini is listening to the whole conversation… (about 10–40 seconds)' : 'Gemini is reading the conversation…');
   try {
-    order.transcript = text;
-    applyResult(await parseWithClaude(text, { apiKey: settings.apiKey, model: settings.model }));
+    applyResult(await analyzeConversation({ audio, text }, geminiOptions()));
   } catch (err) {
     console.error(err);
-    toast(err.message || 'AI parsing failed - using offline parser');
-    runOffline();
+    const offline = !navigator.onLine ? ' You look offline – the recording is saved, tap Analyze when you have signal.' : '';
+    $('parse-notes').innerHTML = `<b>Could not analyze:</b> ${escapeHtml(err.message || String(err))}${offline}`;
+    $('parse-notes').hidden = false;
+    toast('Analysis failed – your recording is safe, try again');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '✨ Build with AI';
+    busy(false);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Recording
+// ---------------------------------------------------------------------------
+let recording = null;   // Blob of the last visit
+let recorder = null;
+
+function showRecording(blob) {
+  recording = blob;
+  $('rec-box').hidden = !blob;
+  if (!blob) return;
+  const old = $('rec-player').src;
+  $('rec-player').src = URL.createObjectURL(blob);
+  if (old) URL.revokeObjectURL(old);
+}
+
+function recUi(on) {
+  $('btn-rec').classList.toggle('on', on);
+  $('btn-rec').setAttribute('aria-pressed', String(on));
+  $('rec-label').textContent = on ? 'Stop & analyze' : 'Start recording';
+  $('rec-time').hidden = !on;
+  $('rec-box').hidden = on || !recording;
+  document.querySelector('.file-btn').hidden = on;
+  $('rec-status').textContent = on
+    ? 'Recording… keep this screen open and the phone on the counter. Talk normally.'
+    : 'Tap when you enter the shop and talk normally – Hindi, Hinglish or English. Tap again when you leave: Gemini listens to the whole conversation, leaves out the small talk and builds the order.';
+}
+
+$('btn-rec').addEventListener('click', async () => {
+  if (recorder && recorder.active) {
+    const blob = await recorder.stop();
+    recUi(false);
+    if (!blob || !blob.size) { toast('Nothing was recorded'); return; }
+    showRecording(blob);
+    await saveRecording(blob);
+    analyze({ audio: blob });
+    return;
+  }
+  if (!settings.geminiKey) { toast('Add your Gemini API key in Settings first'); openSettings(); return; }
+  if (recording && !confirm('Start a new recording? The previous recording will be replaced (download it first with “Save audio” if you need it).')) return;
+  recorder = new Recorder({ onTick: (ms) => { $('rec-time').textContent = formatDuration(ms); } });
+  try {
+    await recorder.start();
+    recUi(true);
+  } catch (err) {
+    toast(err.name === 'NotAllowedError' ? 'Allow the microphone for this site, then try again' : (err.message || 'Could not start recording'));
+  }
+});
+
+$('btn-analyze').addEventListener('click', () => { if (recording) analyze({ audio: recording }); });
+
+$('f-audio').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  showRecording(file);
+  await saveRecording(file);
+  analyze({ audio: file });
+});
+
+$('btn-save-audio').addEventListener('click', () => {
+  if (!recording) return;
+  const ext = (recording.type.split('/')[1] || 'webm').split(';')[0].replace('mpeg', 'mp3').replace('x-m4a', 'm4a');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(recording);
+  a.download = `Visit_${(order.customer.name || 'shop').replace(/[^a-z0-9]+/gi, '_')}_${(order.date || '').replace(/\//g, '-')}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
+if (!recordingSupported) {
+  $('rec-status').textContent = 'This browser cannot record audio. Open the app in Chrome or Safari – or pick a recording made with the phone’s voice recorder.';
+  $('btn-rec').disabled = true;
+}
+
+// ---------------------------------------------------------------------------
+// Conversation text (review, correct, rebuild)
+// ---------------------------------------------------------------------------
+$('btn-reanalyze-text').addEventListener('click', () => {
+  const text = $('f-transcript').value;
+  if (!text.trim()) { toast('No conversation text yet'); return; }
+  order.transcript = text;
+  if (settings.geminiKey) { analyze({ text }); return; }
+  // no key: the built-in (offline) reader
+  if (manualEdits && order.lines.length && !confirm('This replaces the changes you made to the order lines. Continue?')) return;
+  applyResult(parseTranscript(text));
 });
 
 $('btn-copy-talk').addEventListener('click', async () => {
@@ -277,15 +378,15 @@ $('btn-copy-talk').addEventListener('click', async () => {
   if (!text.trim()) { toast('Nothing to copy yet'); return; }
   try {
     await navigator.clipboard.writeText(text);
-    toast('Transcript copied - paste it anywhere (WhatsApp, chat…)');
+    toast('Conversation copied');
   } catch {
     $('f-transcript').select();
-    toast('Select-all done - tap Copy');
+    toast('Text selected – tap Copy');
   }
 });
 
 $('btn-clear-talk').addEventListener('click', () => {
-  if ($('f-transcript').value && !confirm('Clear the transcript?')) return;
+  if ($('f-transcript').value && !confirm('Clear the conversation text?')) return;
   $('f-transcript').value = '';
   order.transcript = '';
   $('parse-notes').hidden = true;
@@ -293,63 +394,6 @@ $('btn-clear-talk').addEventListener('click', () => {
 });
 
 $('f-transcript').addEventListener('input', (e) => { order.transcript = e.target.value; saveDraft(); });
-
-// ---------------------------------------------------------------------------
-// Voice
-// ---------------------------------------------------------------------------
-$('f-lang').value = settings.lang;
-$('f-lang').addEventListener('change', (e) => {
-  settings.lang = e.target.value;
-  store.set('vob.settings', settings);
-  if (listener && listener.active) { listener.stop(); startListening(); }
-});
-
-let listener = null;
-function startListening() {
-  listener = new Listener({
-    lang: settings.lang,
-    onFinal: (heard) => {
-      // Hindi is recognised in Devanagari; show it in English letters.
-      const txt = shown(heard);
-      const ta = $('f-transcript');
-      ta.value = (ta.value ? `${ta.value.replace(/\s+$/, '')}\n` : '') + txt;
-      ta.scrollTop = ta.scrollHeight;
-      order.transcript = ta.value;
-      saveDraft();
-      if ($('f-live').checked) runOffline({ silent: true });
-    },
-    onInterim: (txt) => { $('interim').textContent = shown(txt); },
-    onState: (s) => {
-      const on = s === 'listening';
-      $('btn-mic').classList.toggle('on', on);
-      $('btn-mic').setAttribute('aria-pressed', String(on));
-      $('mic-label').textContent = on ? 'Stop' : 'Start listening';
-      $('mic-status').textContent = on ? 'Listening… talk normally. Tap Stop when the order is done.' : 'Stopped. Check the lines below, then share the order form.';
-    },
-    onError: (msg) => toast(msg),
-  });
-  try { listener.start(); } catch (err) { toast(err.message); }
-}
-
-$('btn-mic').addEventListener('click', () => {
-  if (listener && listener.active) {
-    listener.stop();
-    if ($('f-live').checked && !manualEdits) runOffline({ silent: true });
-  } else startListening();
-});
-
-// Every iPhone browser uses Apple's speech engine, which is weaker than
-// Google's for Hindi-English trade talk.
-const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-if (isIOS && speechSupported) {
-  $('mic-status').textContent = 'iPhone uses Apple’s speech engine, which often mishears Hindi. If the text comes out wrong, '
-    + 'switch Language to English (India) and say sizes in English (“Ruby ICD, eighty-five mein do”).';
-}
-
-if (!speechSupported) {
-  $('mic-status').textContent = 'This browser cannot convert speech to text. Open the app in Chrome (Android / Windows / Mac) — or type/paste the conversation below.';
-  $('btn-mic').disabled = true;
-}
 
 // ---------------------------------------------------------------------------
 // Preview & export
@@ -425,8 +469,9 @@ $('btn-save').addEventListener('click', () => {
 
 $('btn-new').addEventListener('click', () => {
   if (order.lines.length && !confirm('Start a new order? Save this one first if you need it.')) return;
-  listener?.active && listener.stop();
+  if (recorder && recorder.active) { toast('Stop the recording first'); return; }
   order = emptyOrder();
+  showRecording(null);
   manualEdits = false;
   fillFields();
   renderLines();
@@ -482,8 +527,8 @@ document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('cli
 // Settings
 // ---------------------------------------------------------------------------
 function openSettings() {
-  $('s-key').value = settings.apiKey || '';
-  $('s-model').value = settings.model || DEFAULT_MODEL;
+  $('s-key').value = settings.geminiKey || '';
+  $('s-model').value = settings.geminiModel || DEFAULT_GEMINI_MODEL;
   $('s-custom').value = settings.custom || '';
   $('s-fixes').value = settings.fixes || '';
   $('dlg-settings').showModal();
@@ -491,25 +536,14 @@ function openSettings() {
 $('btn-settings').addEventListener('click', openSettings);
 $('dlg-settings').addEventListener('close', () => {
   if ($('dlg-settings').returnValue !== 'save') return;
-  settings.apiKey = $('s-key').value.trim();
-  settings.model = $('s-model').value.trim() || DEFAULT_MODEL;
+  settings.geminiKey = $('s-key').value.trim();
+  settings.geminiModel = $('s-model').value.trim() || DEFAULT_GEMINI_MODEL;
   settings.custom = $('s-custom').value;
   settings.fixes = $('s-fixes').value;
   setCorrections(parseFixes(settings.fixes));
-  if ($('f-transcript').value) {
-    $('f-transcript').value = shown($('f-transcript').value);
-    order.transcript = $('f-transcript').value;
-    saveDraft();
-  }
   store.set('vob.settings', settings);
   setCustomProducts(parseCustomStyles(settings.custom));
-  // apply rates of known custom styles to current lines
-  const known = parseCustomStyles(settings.custom);
-  for (const l of order.lines) {
-    if (!l.custom) continue;
-    const k = known.find((c) => c.code.replace(/\s+/g, '').toLowerCase() === l.desc.replace(/\s+/g, '').toLowerCase());
-    if (k && k.rate && !l.customRate) l.customRate = k.rate;
-  }
+  knownStyleRates(order.lines);
   renderLines();
   schedulePreview();
   toast('Settings saved');
@@ -521,6 +555,9 @@ $('dlg-settings').addEventListener('close', () => {
 fillFields();
 renderLines();
 drawPreview();
+// bring back the last recording (e.g. after a reload with no signal)
+loadRecording().then((r) => { if (r && r.blob && !recording) showRecording(r.blob); });
+if (!settings.geminiKey) $('rec-status').textContent = 'First, add your Gemini API key: tap ⚙ Settings (top right). Then tap Start recording when you enter a shop.';
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
