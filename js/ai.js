@@ -15,7 +15,9 @@ function catalogText() {
   }).join('\n');
 }
 
-const SYSTEM = `You turn a recorded sales conversation (Indian English / Hinglish, speech-to-text, so expect mis-heard words) between a hosiery sales representative of Skipper Hosiery and a retail customer into a written order.
+const SYSTEM = `You turn a recorded sales conversation (mostly Hindi, sometimes Hinglish or Indian English; speech-to-text, so expect mis-heard words) between a hosiery sales representative of Skipper Hosiery and a retail customer into a written order.
+
+The transcript is often in Devanagari: product names and letters are spoken English written in Hindi script (रूबी आईडब्ल्यूडी = Ruby IWD, लाइट आईसीडी = Lite ICD, ओ ई = O/E, आरएन = RN), numbers are Hindi words (पचहत्तर 75, अस्सी 80, पचासी 85, नब्बे 90, पचानवे 95, सौ 100, एक सौ पांच 105, एक सौ दस 110, साठ 60, पैंसठ 65, सत्तर 70, तिहत्तर 73). "पचासी में दो" = size 85, 2 boxes; "से … तक" = range; "हर साइज़ में" / "चार चार" = same qty in every size; "वही" = ditto; "हटा दो" / "कैंसिल" = remove. "दे दो" means "give", not the number two. Keep a Hindi party name in Devanagari.
 
 How the order form works:
 - Each order line is a product ("style") plus quantities per size. Quantities are boxes (dozens for Sofiyaa / Honey items).

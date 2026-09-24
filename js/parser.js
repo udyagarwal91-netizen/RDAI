@@ -9,6 +9,7 @@
 // followed by numbers) -> resolve product -> read size/qty pairs.
 
 import { CATALOG, CATALOG_BY_ID, ADULT_SIZES, KIDS_SIZES, BRANDS } from './catalog.js';
+import { devanagariToRoman, hasDevanagari, cleanDevanagari, ROMAN_HINDI_NUMBERS } from './hindi.js';
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -58,6 +59,17 @@ const SYNONYMS = {
   rns: 'rns', rnr: 'rns', rn: 'rn', sleeve: 'rns', sleeves: 'rns', sleeved: 'rns', baju: 'rns',
   oe: 'oe', ie: 'ie', fe: 'fe', icd: 'icd', iwd: 'iwd', icdp: 'icdp', rcd: 'rcd', cd: 'cd', cj: 'cj', ipd: 'ipd', opd: 'opd',
   wsp: 'wsp',
+  // romanised Hindi / transliterated Devanagari forms
+  lait: 'lite', laait: 'lite', klasik: 'classic', klasic: 'classic', kalar: 'color', kalard: 'color', rangeen: 'color',
+  droar: 'drawer', drovar: 'drawer', dravar: 'drawer', drayar: 'drawer', dror: 'drawer', chaddi: 'drawer', kachha: 'drawer',
+  brif: 'brief', trank: 'trunk', edvans: 'advans', chunamun: 'chunmun', jentiz: 'genteez', jentis: 'genteez',
+  lavli: 'lovely', lavali: 'lovely', penti: 'penteez', pentiz: 'penteez', painti: 'penteez', blumar: 'bloomer',
+  shamiz: 'sameez', vhait: 'white', vait: 'white', safed: 'white', poket: 'pocket', pokit: 'pocket', jeb: 'pocket',
+  baramuda: 'bermuda', barmuda: 'bermuda', boksar: 'boxer', baksar: 'boxer', suparfain: 'superfine',
+  chenlok: 'chainlock', chainlok: 'chainlock', intarlok: 'interlock', natakhat: 'natkhat', rubee: 'ruby',
+  baniyain: 'vest', baniyan: 'vest', banyaan: 'vest', lanng: 'long', lamba: 'long', printed: 'print', chhapai: 'print',
+  sada: 'plain', kala: 'black', kali: 'black', sofiyaa: 'sofiyaa', res: 'race', honi: 'honey', hani: 'honey',
+  fold: 'folding', foldin: 'folding', stretch: 'lycra', nikkar: 'shorts',
 };
 
 // Words that glue numbers together but carry no product meaning.
@@ -84,6 +96,9 @@ const NOT_CODE = new Set([
   'aaj', 'kal', 'din', 'mal', 'maal', 'party', 'bill', 'rs', 'rupees', 'rupee', 'paisa', 'amount', 'item', 'items',
 ]);
 
+// "de do", "likh do": Hindi verb + "do" (give/do), not the number two.
+const DO_VERBS = new Set(['de', 'kar', 'karo', 'likh', 'bhej', 'bata', 'rakh', 'laga', 'dikha', 'bol', 'hata', 'chala', 'ban', 'bana', 'jama', 'pack']);
+
 // Numbers that are part of product names rather than sizes/quantities.
 const NAME_NUMBERS = new Set([502, 1100, 1200, 1300, 2100, 2200, 3100, 3200]);
 
@@ -92,10 +107,7 @@ const EN_NUMBERS = {
   eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
   nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
 };
-const HI_NUMBERS = {
-  ek: 1, teen: 3, tin: 3, char: 4, chaar: 4, paanch: 5, panch: 5, paach: 5, chhe: 6, chhah: 6, chah: 6, chhai: 6,
-  saat: 7, aath: 8, nau: 9, das: 10, gyarah: 11, barah: 12, baara: 12, pandrah: 15, bees: 20, bis: 20, pachis: 25,
-};
+const HI_NUMBERS = ROMAN_HINDI_NUMBERS;
 const TENS = new Set([20, 30, 40, 50, 60, 70, 80, 90]);
 
 function norm(s) {
@@ -170,12 +182,15 @@ function fuzzyVocab(t) {
 const isSizeValue = (n) => (n >= 30 && n <= 130 && n % 5 === 0) || n === 73;
 
 function preNormalise(text) {
-  let s = ` ${String(text || '').toLowerCase()} `;
+  // Hindi (Devanagari) speech output -> romanised Hinglish first
+  let s = ` ${devanagariToRoman(text).toLowerCase()} `;
   // Devanagari digits -> ASCII
   s = s.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x966));
   s = s.replace(/%/g, ' percent ');
   // i.c.d / o/e / m/s -> icd / oe / ms
-  s = s.replace(/\b([a-z])[./]([a-z])[./]?([a-z])?\b/g, (_, a, b, c) => a + b + (c || ''));
+  s = s.replace(/\b([a-z])[./]([a-z])[./]?([a-z])?\b\.?/g, (_, a, b, c) => a + b + (c || ''));
+  // sentence ends / separate speech results are hard boundaries
+  s = s.replace(/[.?!;\n\u0964]+/g, ' qqbrk ');
   const phrases = [
     [/\brace\s*(4|four|for)\b/g, ' race4 '],
     [/\b(easy|ezee|ezy|eazy)\s*line\b/g, ' ezeeline '],
@@ -207,11 +222,17 @@ function wordNumber(tokens, i) {
   // returns [value, consumed] for number words at tokens[i]
   const t = tokens[i];
   const next = tokens[i + 1];
-  if (/^\d+$/.test(t)) return [Number(t), 1];
-  if (t === 'hundred') {
-    if (next != null && EN_NUMBERS[next] != null && EN_NUMBERS[next] <= 30) return [100 + EN_NUMBERS[next], 2];
-    return [100, 1];
+  const small = (w) => (w == null ? null : /^\d+$/.test(w) ? Number(w) : EN_NUMBERS[w] ?? HI_NUMBERS[w] ?? null);
+  // A bare "sau" / "hundred" is size 100 ("सौ चार" = size 100, 4 boxes);
+  // only "एक सौ दस" / "one hundred ten" make 110.
+  if (t === 'hundred' || t === 'sau') return [100, 1];
+  // "1 sau 10" / "ek sau das" / "एक सौ दस" -> 110
+  if ((t === '1' || t === 'ek') && (next === 'hundred' || next === 'sau')) {
+    const v = small(tokens[i + 2]);
+    if (v != null && v > 0 && v <= 30) return [100 + v, 3];
+    return [100, 2];
   }
+  if (/^\d+$/.test(t)) return [Number(t), 1];
   // "one ten", "one twenty five", "one hundred five"
   if (t === 'one' && next != null) {
     if (next === 'hundred') {
@@ -267,7 +288,13 @@ export function tokenize(text) {
     // Hindi "do" (2) vs English "do"
     if (t === 'do') {
       const nx = raw[i + 1];
-      if (prevIsNum || CONNECTORS.has(nx) || EACH_WORDS.has(nx)) out.push({ n: 2, src: t });
+      const before = raw[i - 1];
+      const verb = DO_VERBS.has(before);
+      const afterNumber = prevIsNum || (/^(mein|me|men|main|mai|ka|ke|ki|of|in)$/.test(before || '')
+        && out[out.length - 2] && out[out.length - 2].n != null);
+      if (!verb && (afterNumber || CONNECTORS.has(nx) || EACH_WORDS.has(nx) || /^\d+$/.test(nx || ''))) {
+        out.push({ n: 2, src: t });
+      }
       continue;
     }
     // "for" misheard for four right after a size
@@ -284,6 +311,7 @@ export function tokenize(text) {
       } else out.push({ w: 'to' });
       continue;
     }
+    if (t === 'qqbrk') { if (prev && !prev.brk) out.push({ brk: true }); continue; }
     const num = wordNumber(raw, i);
     if (num) {
       out.push({ n: num[0], src: t });
@@ -320,6 +348,7 @@ function segment(tokens) {
 
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
+    if (t.brk) { flush(); continue; }
     if (t.n != null) {
       const n = t.n;
       const last = cur.name[cur.name.length - 1];
@@ -343,7 +372,10 @@ function segment(tokens) {
     const w = t.w;
     const code = looksLikeCode(tokens, i);
     if (isVocab(w) || code || CANCEL_WORDS.has(w)) {
-      if (cur.nums.length) flush();
+      // "Lite brief hatao, JFS 2409 ..." - a cancel ends its own line
+      const ci = cur.name.findIndex((x) => x.w && CANCEL_WORDS.has(x.w));
+      const cancelled = ci > 0 && cur.name.slice(0, ci).some((x) => x.w && isVocab(x.w));
+      if (cur.nums.length || (cancelled && !CANCEL_WORDS.has(w))) flush();
       cur.name.push(code ? { ...t, code: true } : t);
       continue;
     }
@@ -362,8 +394,10 @@ function segment(tokens) {
   const merged = [];
   for (const sg of segs) {
     const prev = merged[merged.length - 1];
-    const onlyJunk = sg.name.length && sg.name.length <= 2 && sg.name.every((t) => t.junk || (t.w && CONNECTORS.has(t.w)));
-    if (prev && onlyJunk && prev.name.some((t) => !t.junk) && sg.nums.filter((t) => t.n != null).length >= 2) {
+    const onlyJunk = sg.name.length <= 2 && sg.name.every((t) => t.junk || (t.w && CONNECTORS.has(t.w)));
+    // also covers a pause: "Ruby IWD 85 mein do" <new line> "90 mein teen"
+    if (prev && onlyJunk && prev.name.some((t) => !t.junk && !(t.w && CANCEL_WORDS.has(t.w)))
+      && sg.nums.filter((t) => t.n != null).length >= 2) {
       prev.nums.push(...sg.nums);
     } else merged.push(sg);
   }
@@ -503,6 +537,8 @@ export function readQuantities(tokens, cols) {
       if (nx && nx.t === 'Q') {
         if (nx.v.length === g.v.length) g.v.forEach((s, k) => { qty[s] = nx.v[k]; });
         else if (nx.v.length === 1) g.v.forEach((s) => { qty[s] = nx.v[0]; });
+        // Hindi reduplication: "60 se 85 tak char char" = 4 in every size
+        else if (nx.v.every((q) => q === nx.v[0])) g.v.forEach((s) => { qty[s] = nx.v[0]; });
         else if (g.v.length === 1) {
           qty[g.v[0]] = nx.v[0];
           warnings.push(`Extra numbers ignored after size ${g.v[0]}: ${nx.v.slice(1).join(', ')}`);
@@ -543,23 +579,60 @@ export function readQuantities(tokens, cols) {
 
 const titleCase = (s) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase()).trim();
 
-export function detectHeader(text) {
-  const src = String(text || '').toLowerCase();
+// Party name spoken in Hindi: keep it in Devanagari (transliterating names
+// mangles them); the form's handwriting font renders Devanagari.
+function detectHindiHeader(text, found) {
+  const src = cleanDevanagari(text);
   const out = {};
-  const m = src.match(/\b(?:party(?:\s+ka)?(?:\s+name)?|customer(?:\s+name)?|client(?:\s+name)?|m\s*\/\s*s|messrs|order\s+for|order\s+from)\s*(?:is|hai|:|-)?\s+([^.,;!?\n]+)/);
+  const m = src.match(/(?:पार्टी|ग्राहक|कस्टमर|दुकान|फर्म)(?:\s+का)?(?:\s+नाम)?(?:\s+है)?\s*[:\-]?\s+([^,।.!?\n]+)/);
+  if (!m) return out;
+  let words = m[1].trim().split(/\s+/);
+  const stop = words.findIndex((w) => /^(है|हैं|जी|भाई|ऑर्डर|आर्डर|का|की|के|और)$/.test(w));
+  if (stop >= 0) words = words.slice(0, stop);
+  const se = words.findIndex((w) => /^(से|वाले|वाला|वाली)$/.test(w));
+  if (se >= 1) {
+    out.place = words[se - 1];
+    words = words.slice(0, se - 1);
+  }
+  if (!out.place) {
+    // "... मनोज टेक्सटाइल्स है, सिबसागर से"
+    const pm = src.slice(m.index + m[0].length).match(/^\s*,?\s*([^\s,।.!?]+)\s+(?:से|वाले|वाला|वाली)(?=\s|$|[,।.!?])/);
+    if (pm) out.place = pm[1];
+  }
+  words = words.filter((w) => /[\u0900-\u097F]/.test(w)).slice(0, 5);
+  if (words.length) out.name = words.join(' ');
+  else if (found.name) out.name = found.name;
+  return out;
+}
+
+export function detectHeader(text) {
+  const src = devanagariToRoman(text).toLowerCase();
+  const out = {};
+  const m = src.match(/\b(?:party(?:\s+ka)?(?:\s+(?:name|naam|nam))?|customer(?:\s+ka)?(?:\s+(?:name|naam))?|dukaan(?:\s+ka)?(?:\s+(?:name|naam))?|client(?:\s+name)?|m\s*\/\s*s|messrs|order\s+for|order\s+from)\s*(?:is|hai|:|-)?\s+([^.,;!?\n]+)/);
   if (m) {
     let words = m[1].replace(/[^a-z ]+/g, ' ').trim().split(/\s+/);
     const stop = words.findIndex((w) => /^(order|and|aur|ka|ke|ki|hai|is|haan|ok|okay|bhai|ji|sir)$/.test(w));
     if (stop >= 0) words = words.slice(0, stop);
-    const at = words.findIndex((w) => /^(from|of|se|at|in)$/.test(w));
-    if (at >= 0) {
+    const hiAt = words.findIndex((w) => /^(se|wale|wala|wali)$/.test(w));
+    const at = words.findIndex((w) => /^(from|of|at|in)$/.test(w));
+    if (hiAt >= 1 && (at < 0 || hiAt < at)) {
+      // Hindi order: "Manoj Textiles Sibsagar se" -> place is the word before "se"
+      out.place = titleCase(words[hiAt - 1]);
+      words = words.slice(0, hiAt - 1);
+    } else if (at >= 0) {
       const place = words.slice(at + 1, at + 3);
       if (place.length) out.place = titleCase(place.join(' '));
       words = words.slice(0, at);
     }
+    if (!out.place) {
+      // "... Handloom Store hai, Tinsukia se"
+      const pm = src.slice(m.index + m[0].length).match(/^\s*,?\s*([a-z]+)\s+(?:se|wale|wala|wali)\b/);
+      if (pm) out.place = titleCase(pm[1]);
+    }
     words = words.slice(0, 5);
     if (words.length) out.name = titleCase(words.join(' '));
   }
+  if (hasDevanagari(text)) Object.assign(out, detectHindiHeader(text, out));
   const tr = src.match(/\b(?:through|by|via)\s+([a-z]+(?:\s+[a-z]+)?)\s+(transport|roadways|logistics|carriers?|cargo)\b/);
   if (tr) out.transport = titleCase(`${tr[1]} ${tr[2]}`);
   return out;

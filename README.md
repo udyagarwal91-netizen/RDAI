@@ -18,6 +18,12 @@ the paper **ORDER FORM**, ready to share on WhatsApp.
    - Styles not in the price list: `JFS 2409 net 60 5 65 5 ...`, then just `2505 ...`
      (keeps the JFS prefix), `AHW 613 WSP minus 15 percent 85 to 100 2 each`
    - Corrections: `Ruby ICD 85 5` (overrides), `cancel Lite brief`
+   - **Hindi works the same way** (default language):
+     `रूबी आईडब्ल्यूडी पचासी में दो, नब्बे में तीन` ·
+     `लाइट आईसीडी पचासी और नब्बे में पांच पांच डिब्बे` ·
+     `रूबी आईसीडी पचहत्तर से सौ तक हर साइज़ में दो` ·
+     `मार्कोस कलर ब्रीफ एक सौ दस में चार` · `लाइट ब्रीफ हटा दो` ·
+     `पार्टी का नाम मनोज टेक्सटाइल्स है, सिबसागर से`
 4. Small talk (“rate kya hai”, greetings…) is ignored and listed under
    *Treated as conversation* so nothing silently disappears.
 5. Check / edit the lines, then **Share** or **Download JPEG**.

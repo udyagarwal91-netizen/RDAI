@@ -113,3 +113,68 @@ test('catalog: product picker labels ("short + shape") are unique', () => {
   const dup = labels.filter((l, i) => labels.indexOf(l) !== i);
   assert.deepEqual(dup, []);
 });
+
+// ---------------------------------------------------------------------------
+// Hindi: what Chrome returns when listening in Hindi (Devanagari)
+// ---------------------------------------------------------------------------
+import { transliterate, devanagariToRoman } from '../js/hindi.js';
+
+test('Hindi: Manoj Textiles order in Devanagari with Hindi numbers', () => {
+  const r = parseTranscript(
+    'पार्टी का नाम मनोज टेक्सटाइल्स है, सिबसागर से। नमस्ते भाई कैसे हो। ' +
+    'रूबी आईडब्ल्यूडी पचासी में दो, नब्बे में तीन, पचानवे में दो, सौ में दो। ' +
+    'क्लासिक जिम बनियान पचासी तीन, पचानवे चार, सौ चार। ' +
+    'लाइट आईसीडी पचासी और नब्बे में पांच पांच डिब्बे। ' +
+    'वही लॉन्ग ट्रंक ओ ई पचासी पांच नब्बे दस पचानवे तीन सौ तीन। ' +
+    'मार्कोस कलर ब्रीफ एक सौ दस में चार, एक सौ पांच में दो। ' +
+    'रेट क्या है भाई पचासी का');
+  assert.deepEqual(r.header, { name: 'मनोज टेक्सटाइल्स', place: 'सिबसागर' });
+  const L = byDesc(r);
+  assert.deepEqual(L['ruby-iwd'].qty, { 85: 2, 90: 3, 95: 2, 100: 2 });
+  assert.deepEqual(L['classic-gym'].qty, { 85: 3, 95: 4, 100: 4 });
+  assert.deepEqual(L['lite-icd'].qty, { 85: 5, 90: 5 });
+  assert.deepEqual(L['lite-oelt'].qty, { 85: 5, 90: 10, 95: 3, 100: 3 });
+  assert.deepEqual(L['marcos-cbrief'].qty, { 105: 2, 110: 4 });
+  assert.equal(r.lines.length, 5);
+});
+
+test('Hindi: ranges (से…तक), "हर साइज़", "चार चार", cancel, style codes', () => {
+  const r = parseTranscript(
+    'रूबी आई सी डी पचहत्तर से सौ तक हर साइज़ में दो डिब्बे। इज़ी कलर आरएन 85 में 2 90 में 3। ' +
+    'नटखट प्रिंट बनियान साठ पैंसठ सत्तर में चार चार चार। लाइट ब्रीफ पचासी दो। लाइट ब्रीफ हटा दो। ' +
+    'जेएफएस 2409 नेट साठ में पांच पैंसठ में पांच। 2505 वही साठ से पचासी तक चार चार डिब्बे। इसको अभी दे दो भाई');
+  const L = byDesc(r);
+  assert.deepEqual(L['ruby-icd'].qty, { 75: 2, 80: 2, 85: 2, 90: 2, 95: 2, 100: 2 });
+  assert.deepEqual(L['ezee-cf-rn'].qty, { 85: 2, 90: 3 });
+  assert.deepEqual(L['natkhat-rn'].qty, { 60: 4, 65: 4, 70: 4 });
+  assert.equal(L['lite-iebrief'], undefined);
+  assert.equal(L['JFS 2409'].shape, 'Net');
+  assert.deepEqual(L['JFS 2505'].qty, { 60: 4, 65: 4, 70: 4, 75: 4, 80: 4, 85: 4 });
+  assert.equal(r.lines.length, 5);
+});
+
+test('Hinglish typed/recognised in Roman letters with Hindi numbers', () => {
+  const r = parseTranscript(
+    'party ka naam Handloom Store hai, Tinsukia se. Ruby IWD pachasi mein do, nabbe mein do, pachanve mein ek. ' +
+    'Ruby ICD pachattar ek assi do pachasi das nabbe das. Ezee colour RN pachasi se sau tak do do dabbe. likh do bhai');
+  assert.deepEqual(r.header, { name: 'Handloom Store', place: 'Tinsukia' });
+  const L = byDesc(r);
+  assert.deepEqual(L['ruby-iwd'].qty, { 85: 2, 90: 2, 95: 1 });
+  assert.deepEqual(L['ruby-icd'].qty, { 75: 1, 80: 2, 85: 10, 90: 10 });
+  assert.deepEqual(L['ezee-cf-rn'].qty, { 85: 2, 90: 2, 95: 2, 100: 2 });
+});
+
+test('Hindi: a pause between speech results keeps sizes on the same product', () => {
+  const r = parseTranscript('रूबी आईडब्ल्यूडी पचासी में दो\nनब्बे में तीन\nपचानवे में दो');
+  assert.deepEqual(r.lines[0].qty, { 85: 2, 90: 3, 95: 2 });
+});
+
+test('Hindi: transliteration fallback for words not in the dictionary', () => {
+  assert.equal(transliterate('फोल्डिंग'), 'folding');
+  assert.equal(transliterate('नटखट'), 'natkhat');
+  assert.equal(transliterate('चुनमुन'), 'chunmun');
+  assert.equal(transliterate('मार्कोस'), 'markos');
+  assert.match(devanagariToRoman('आरएनएस'), /\brns\b/);
+  // "दे दो" (give) is not the number two
+  assert.equal(parseTranscript('रूबी आईसीडी पचासी दे दो').lines.length, 0);
+});

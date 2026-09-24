@@ -19,6 +19,7 @@ ORDER FORM.
 ## Architecture
 
 - `js/catalog.js` – the price list as data. Rates are keyed by size groups (`'80-85-90': 880`) and expanded to per-size `prices`. `ADULT_SIZES` / `KIDS_SIZES` are the order-form columns.
+- `js/hindi.js` – Devanagari → romanised Hinglish (dictionary of product/order words, Hindi numbers 1–100, spoken English letters "आई सी डी", schwa-aware transliteration fallback). Runs first inside the parser's normalisation.
 - `js/parser.js` – offline rule parser: normalise speech text (number words incl. Hindi, spelled letters "i w d" → "iwd", synonyms, fuzzy match) → split into segments (product words followed by numbers) → score catalog products (IDF-weighted keywords + aliases, previous brand inherited as a "ditto") → read size/qty patterns (pairs, ranges, lists, "each"). Unknown codes like `JFS 2409` become custom lines. Pure module, tested in Node.
 - `js/ai.js` – optional Claude parser (Anthropic SDK from jsDelivr, browser-side, structured JSON output). Must return the same shape as `parseTranscript`.
 - `js/order.js` – order model + pricing (`lineTotals`, `orderTotals`).

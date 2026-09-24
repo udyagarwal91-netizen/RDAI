@@ -19,7 +19,9 @@ const store = {
   },
 };
 
-let settings = { apiKey: '', model: DEFAULT_MODEL, custom: '', lang: 'en-IN', prices: true, ...store.get('vob.settings', {}) };
+let settings = { apiKey: '', model: DEFAULT_MODEL, custom: '', lang: 'hi-IN', prices: true, ...store.get('vob.settings', {}) };
+// v2: most orders are spoken in Hindi, so Hindi became the default language.
+if (!settings.v) { settings.lang = 'hi-IN'; settings.v = 2; store.set('vob.settings', settings); }
 let order = store.get('vob.draft', null) || emptyOrder();
 let manualEdits = false;
 
