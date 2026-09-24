@@ -273,7 +273,9 @@ async function analyze({ audio, text }) {
   if (manualEdits && order.lines.length && !confirm('This replaces the changes you made to the order lines. Continue?')) return;
   busy(true, audio ? 'Gemini is listening to the whole conversation… (about 10–40 seconds)' : 'Gemini is reading the conversation…');
   try {
-    applyResult(await analyzeConversation({ audio, text }, geminiOptions()));
+    const res = await analyzeConversation({ audio, text }, { ...geminiOptions(), onStatus: (msg) => busy(true, msg) });
+    applyResult(res);
+    if (res.model !== settings.geminiModel) toast(`Done using ${res.model} (${settings.geminiModel} was busy)`);
   } catch (err) {
     console.error(err);
     const offline = !navigator.onLine ? ' You look offline – the recording is saved, tap Analyze when you have signal.' : '';

@@ -96,22 +96,38 @@ async function toBase64(blob) {
   return btoa(bin);
 }
 
-async function call(url, init, fetchImpl) {
+// Other current Flash models to fall back to when the chosen one is
+// overloaded (503) or rate-limited. Tried in this order.
+export const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+const BUSY = [429, 500, 502, 503, 504];
+
+class GeminiError extends Error {
+  constructor(message, status) { super(message); this.status = status; }
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function call(url, init, fetchImpl, { retries = 3, onRetry, sleep = wait } = {}) {
   let last;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
     const res = await fetchImpl(url, init);
     if (res.ok) return res;
     last = res;
-    if (![429, 500, 502, 503, 504].includes(res.status)) break;
-    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    if (!BUSY.includes(res.status) || attempt === retries) break;
+    // Google asks to back off: 2s, 5s, 10s (or its Retry-After, max 20s)
+    const after = Number(res.headers?.get?.('retry-after'));
+    const ms = after > 0 ? Math.min(after * 1000, 20000) : [2000, 5000, 10000][attempt] || 10000;
+    onRetry?.(attempt + 1, retries);
+    await sleep(ms);
   }
   let detail = '';
   try { detail = (await last.json()).error?.message || ''; } catch { /* not json */ }
-  if (last.status === 400 && /api key/i.test(detail)) throw new Error('Gemini says the API key is not valid. Check it in Settings.');
-  if (last.status === 403) throw new Error('Gemini refused the API key (403). Check the key and that billing is on.');
-  if (last.status === 404) throw new Error(`Gemini model not found. Change the model name in Settings. (${detail})`);
-  if (last.status === 429) throw new Error('Gemini quota exceeded (429). Check your Gemini balance / limits, then tap Analyze again.');
-  throw new Error(`Gemini error ${last.status}: ${detail || 'please try again'}`);
+  const st = last.status;
+  if (st === 400 && /api key/i.test(detail)) throw new GeminiError('Gemini says the API key is not valid. Check it in Settings.', st);
+  if (st === 403) throw new GeminiError('Gemini refused the API key (403). Check the key and that billing is on.', st);
+  if (st === 404) throw new GeminiError(`Gemini model not found. Change the model name in Settings. (${detail})`, st);
+  if (st === 429) throw new GeminiError('Gemini quota exceeded (429). Check your Gemini balance / limits, then tap Analyze again.', st);
+  throw new GeminiError(`Gemini error ${st}: ${detail || 'please try again'}`, st);
 }
 
 // Large recordings go through the Gemini Files API instead of inline data.
@@ -148,7 +164,7 @@ async function uploadFile(blob, mime, apiKey, fetchImpl) {
  * Analyse a recorded visit (audio Blob) - or, when no audio, a typed transcript.
  * @returns {Promise<{transcript: string, header: object, lines: Array, warnings: string[], ignored: string[]}>}
  */
-export async function analyzeConversation({ audio, text }, { apiKey, model, customStyles, corrections, fetchImpl = fetch } = {}) {
+export async function analyzeConversation({ audio, text }, { apiKey, model, customStyles, corrections, onStatus, fetchImpl = fetch, sleep = wait } = {}) {
   if (!apiKey) throw new Error('Add your Gemini API key in Settings first.');
   const parts = [];
   if (audio) {
@@ -161,15 +177,39 @@ export async function analyzeConversation({ audio, text }, { apiKey, model, cust
     parts.push({ text: `This is the transcript of the whole shop visit (from speech-to-text, so expect mis-heard words):\n\n${text}\n\nReturn a cleaned transcript and the order.` });
   }
 
-  const res = await call(`${API}/models/${encodeURIComponent(model || DEFAULT_GEMINI_MODEL)}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: buildInstructions({ customStyles, corrections }) }] },
-      contents: [{ role: 'user', parts }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA, maxOutputTokens: 32768 },
-    }),
-  }, fetchImpl);
+  const body = JSON.stringify({
+    system_instruction: { parts: [{ text: buildInstructions({ customStyles, corrections }) }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA, maxOutputTokens: 32768 },
+  });
+
+  // The chosen model first; if Google says it is overloaded, try the others.
+  const chosen = model || DEFAULT_GEMINI_MODEL;
+  const models = [chosen, ...FALLBACK_MODELS.filter((m) => m !== chosen)];
+  let res = null;
+  let usedModel = chosen;
+  let lastErr = null;
+  for (const m of models) {
+    if (m !== chosen) onStatus?.(`Gemini is busy – trying ${m}…`);
+    try {
+      res = await call(`${API}/models/${encodeURIComponent(m)}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body,
+      }, fetchImpl, { sleep, onRetry: (n, of) => onStatus?.(`Gemini is busy – waiting and trying again (${n}/${of})…`) });
+      usedModel = m;
+      break;
+    } catch (err) {
+      lastErr = err;
+      const fallbackable = BUSY.includes(err.status) || (m !== chosen && err.status === 404);
+      if (!fallbackable) throw err;
+    }
+  }
+  if (!res) {
+    if (lastErr && lastErr.status === 429) throw lastErr;
+    throw new GeminiError('Google’s Gemini servers are overloaded right now (not a problem with your key or the app). '
+      + 'Your recording is saved – tap “Analyze recording” again in a few minutes.', lastErr?.status);
+  }
 
   const data = await res.json();
   if (data.promptFeedback?.blockReason) throw new Error(`Gemini blocked the request (${data.promptFeedback.blockReason}).`);
@@ -179,7 +219,7 @@ export async function analyzeConversation({ audio, text }, { apiKey, model, cust
   const raw = (cand.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
   let out;
   try { out = JSON.parse(raw); } catch { throw new Error('Gemini gave an unreadable answer. Tap Analyze again.'); }
-  return toOrderResult(out);
+  return { ...toOrderResult(out), model: usedModel };
 }
 
 /** Map Gemini's JSON onto the app's order-line shape (same as parseTranscript). */

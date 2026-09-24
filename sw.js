@@ -1,6 +1,6 @@
 // Offline cache so the app opens without network (speech-to-text itself
 // still needs the browser's online speech service on most phones).
-const CACHE = 'vob-v8';
+const CACHE = 'vob-v9';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg',
   'js/app.js', 'js/catalog.js', 'js/parser.js', 'js/order.js', 'js/form-render.js', 'js/recorder.js', 'js/gemini.js', 'js/hindi.js',

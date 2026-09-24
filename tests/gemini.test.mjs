@@ -91,3 +91,49 @@ test('price list sent to Gemini lists size groups in size order', () => {
   assert.match(s, /ezee-wf-rn \| EZEE WHITE FOLDING RN \| shape RN \| box \| 40-45-50@330 55-60-65@370 70@410 73@450 75@600 80-85-90@640 95-100@740/);
   assert.match(s, /natkhat-rn \| NATKHAT PRINT RN \| shape RN \| box \| 35@460 40-45-50@490/);
 });
+
+// Google overloaded (503): wait-and-retry, then fall back to another model.
+function scriptedFetch(calls, statusFor) {
+  return async (url, init) => {
+    calls.push(url);
+    const status = statusFor(url, calls.length);
+    return {
+      ok: status === 200,
+      status,
+      headers: { get: () => null },
+      json: async () => (status === 200
+        ? { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(answer) }] } }] }
+        : { error: { message: 'This model is currently experiencing high demand.' } }),
+    };
+  };
+}
+const noSleep = () => Promise.resolve();
+
+test('503 is retried and the order still comes back', async () => {
+  const calls = [];
+  const statuses = [];
+  const res = await analyzeConversation({ text: 'Ruby ICD 85 2' }, {
+    apiKey: 'K', model: 'gemini-3.8-flash', sleep: noSleep, onStatus: (m) => statuses.push(m),
+    fetchImpl: scriptedFetch(calls, (url, n) => (n <= 2 ? 503 : 200)),
+  });
+  assert.equal(calls.length, 3);
+  assert.equal(res.model, 'gemini-3.8-flash');
+  assert.equal(res.lines.length, 2);
+  assert.match(statuses[0], /busy – waiting and trying again \(1\/3\)/);
+});
+
+test('a model that stays overloaded falls back to the next Flash model', async () => {
+  const calls = [];
+  const res = await analyzeConversation({ text: 'Ruby ICD 85 2' }, {
+    apiKey: 'K', model: 'gemini-3.8-flash', sleep: noSleep,
+    fetchImpl: scriptedFetch(calls, (url) => (url.includes('gemini-3.8-flash') ? 503 : 200)),
+  });
+  assert.equal(res.model, 'gemini-3.7-flash');
+  assert.equal(calls.filter((u) => u.includes('3.8')).length, 4);   // 1 try + 3 retries
+});
+
+test('all models overloaded: friendly message, recording kept', async () => {
+  await assert.rejects(analyzeConversation({ text: 'x' }, {
+    apiKey: 'K', sleep: noSleep, fetchImpl: scriptedFetch([], () => 503),
+  }), /overloaded right now.*recording is saved/);
+});
