@@ -262,3 +262,20 @@ test('user corrections from Settings apply to text and order', () => {
   assert.equal(fixMisheard('Tension print vest'), 'natkhat print vest');
   setCorrections([]);
 });
+
+test('from a real iPhone transcript: qty-before-size, glued numbers', () => {
+  // "saat pachasi mein, teen nabbe mein" = 7 in size 85, 3 in size 90
+  assert.deepEqual(parseTranscript('Ruby ICD saat pachasi mein teen nabbe mein').lines[0].qty, { 85: 7, 90: 3 });
+  assert.deepEqual(parseTranscript('रूबी आईसीडी सात पचासी में तीन नब्बे में').lines[0].qty, { 85: 7, 90: 3 });
+  // the engine glued words/digits together
+  assert.deepEqual(parseTranscript('Ruby ICD satapchasi mein tinnabbe mein').lines[0].qty, { 85: 7, 90: 3 });
+  assert.deepEqual(parseTranscript('Lite ICD 585 290').lines[0].qty, { 85: 5, 90: 2 });
+  assert.deepEqual(parseTranscript('Lite ICD pachasido nabbeteen').lines[0].qty, { 85: 2, 90: 3 });
+  // size-first speech is unchanged
+  assert.deepEqual(parseTranscript('Ruby ICD pachasi mein saat nabbe mein teen').lines[0].qty, { 85: 7, 90: 3 });
+  // style numbers after a style code are still codes
+  assert.deepEqual(parseTranscript('JFS 2409 net 60 5. 2505 60 4').lines.map((l) => l.desc), ['JFS 2409', 'JFS 2505']);
+  // the screenshot's first line: party + "UP ICD" is now Ruby ICD
+  const r = parseTranscript('likhie manoj textile sibsagar up icd 80 mein 5');
+  assert.equal(r.lines[0].productId, 'ruby-icd');
+});

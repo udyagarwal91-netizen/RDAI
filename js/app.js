@@ -338,6 +338,14 @@ $('btn-mic').addEventListener('click', () => {
   } else startListening();
 });
 
+// Every iPhone browser uses Apple's speech engine, which is weaker than
+// Google's for Hindi-English trade talk.
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (isIOS && speechSupported) {
+  $('mic-status').textContent = 'iPhone uses Apple’s speech engine, which often mishears Hindi. If the text comes out wrong, '
+    + 'switch Language to English (India) and say sizes in English (“Ruby ICD, eighty-five mein do”).';
+}
+
 if (!speechSupported) {
   $('mic-status').textContent = 'This browser cannot convert speech to text. Open the app in Chrome (Android / Windows / Mac) — or type/paste the conversation below.';
   $('btn-mic').disabled = true;

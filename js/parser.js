@@ -408,6 +408,29 @@ export function fixMisheard(text) {
   }).join('\n');
 }
 
+// Two number words heard as one: "tinnabbe" = teen nabbe (3, 90),
+// "satapchasi" = saat pachasi (7, 85).
+let NUM_WORDS = null;
+function splitNumberWords(tok) {
+  if (tok.length < 6 || INDEX.vocab.has(tok) || CONNECTORS.has(tok)) return null;
+  if (!NUM_WORDS) NUM_WORDS = Object.keys({ ...EN_NUMBERS, ...HI_NUMBERS }).filter((w) => w.length >= 3).concat(['do']);
+  const value = (w) => EN_NUMBERS[w] ?? HI_NUMBERS[w] ?? (w === 'do' ? 2 : null);
+  const near = (w) => {
+    if (value(w) != null) return value(w);
+    if (w.length < 5) return null;
+    const hit = NUM_WORDS.find((n) => n.length >= 5 && levenshtein(w, n) <= 1);
+    return hit ? value(hit) : null;
+  };
+  for (let k = 2; k <= tok.length - 2; k++) {
+    const a = value(tok.slice(0, k));
+    if (a == null) continue;
+    const rest = tok.slice(k);
+    const b = near(rest) ?? (rest[0] === 'a' ? near(rest.slice(1)) : null);
+    if (b != null && (isSizeValue(a) || isSizeValue(b))) return [a, b];
+  }
+  return null;
+}
+
 // Produce the token stream: {w: word} or {n: number}
 export function tokenize(text) {
   let raw = preNormalise(text).split(/\s+/).filter(Boolean);
@@ -463,6 +486,8 @@ export function tokenize(text) {
       i += num[1] - 1;
       continue;
     }
+    const glued = splitNumberWords(t);
+    if (glued) { for (const v of glued) out.push({ n: v, src: t }); continue; }
     let w = SYNONYMS[t] || t;
     if (!INDEX.vocab.has(w) && !CONNECTORS.has(w) && !RANGE_WORDS.has(w) && !EACH_WORDS.has(w)) {
       const nxRaw = raw[i + 1] || '';
@@ -490,9 +515,25 @@ function looksLikeCode(tokens, i) {
   return !!(nx && nx.n != null && (!isSizeValue(nx.n) || nx.n >= 200));
 }
 
+// Speech engines sometimes glue two numbers: "585" = 5 in size 85,
+// "855" = size 85, 5 boxes, "3100" = 3 in size 100.
+function splitMerged(n) {
+  const str = String(n);
+  let best = null;
+  for (let k = 1; k < str.length; k++) {
+    if (str[k] === '0') continue;
+    const a = Number(str.slice(0, k));
+    const b = Number(str.slice(k));
+    if (a >= 1 && a <= 30 && b >= 30 && isSizeValue(b) && (!best || b > best.size)) best = { size: b, out: [a, b] };
+    if (b >= 1 && b <= 30 && a >= 30 && isSizeValue(a) && (!best || a > best.size)) best = { size: a, out: [a, b] };
+  }
+  return best ? best.out : null;
+}
+
 function segment(tokens) {
   const segs = [];
   let cur = { name: [], nums: [] };
+  let customCtx = false;   // are we reading style codes like "JFS 2409 ... 2505"?
   const flush = () => { if (cur.name.length || cur.nums.length) segs.push(cur); cur = { name: [], nums: [] }; };
 
   for (let i = 0; i < tokens.length; i++) {
@@ -503,7 +544,11 @@ function segment(tokens) {
       const last = cur.name[cur.name.length - 1];
       if (!cur.nums.length && cur.name.length && NAME_NUMBERS.has(n)) { cur.name.push(t); continue; }
       if (!cur.nums.length && last && last.code && !last.codeNum) {
-        cur.name.push({ ...t, codeNum: true }); last.hasNum = true; continue;
+        cur.name.push({ ...t, codeNum: true }); last.hasNum = true; customCtx = true; continue;
+      }
+      if (n > 130 && !customCtx && !NAME_NUMBERS.has(n)) {
+        const parts = splitMerged(n);
+        if (parts) { for (const v of parts) cur.nums.push({ n: v, src: t.src }); continue; }
       }
       if (n >= 200 && n <= 99999 && !NAME_NUMBERS.has(n)) {
         // A bare style number such as "2505" starts a new line.
@@ -521,6 +566,8 @@ function segment(tokens) {
     const w = t.w;
     const code = looksLikeCode(tokens, i);
     if (isVocab(w) || code || CANCEL_WORDS.has(w)) {
+      if (code) customCtx = true;
+      else if (isVocab(w) && !cur.nums.length && !cur.name.length) customCtx = false;
       // "Lite brief hatao, JFS 2409 ..." - a cancel ends its own line
       const ci = cur.name.findIndex((x) => x.w && CANCEL_WORDS.has(x.w));
       const cancelled = ci > 0 && cur.name.slice(0, ci).some((x) => x.w && isVocab(x.w));
@@ -683,6 +730,14 @@ export function readQuantities(tokens, cols) {
   }
   // 4. pair sizes with quantities
   const qty = {};
+  // Hindi "saat pachasi mein, teen nabbe mein" = 7 in 85, 3 in 90:
+  // quantity BEFORE its size, alternating Q S Q S.
+  const qFirst = groups.length >= 4 && groups.length % 2 === 0
+    && groups.every((g, i) => g.t === (i % 2 ? 'S' : 'Q') && (i % 2 || g.v.length === 1));
+  if (qFirst) {
+    for (let i = 0; i < groups.length; i += 2) groups[i + 1].v.forEach((s) => { qty[s] = groups[i].v[0]; });
+    return { qty, warnings };
+  }
   let lastQ = null;
   let leadingQ = null;
   for (let i = 0; i < groups.length; i++) {
