@@ -15,17 +15,23 @@ const answer = {
   not_order: 'Greetings, family health and the scheme were left out.',
 };
 
+// What Google's streamGenerateContent?alt=sse sends: thought summaries first,
+// then the JSON answer split over several events.
+function sse(body) {
+  const json = JSON.stringify(body);
+  const cut = Math.floor(json.length / 2);
+  const ev = (o) => `data: ${JSON.stringify(o)}\r\n\r\n`;
+  return ev({ candidates: [{ content: { parts: [{ text: 'Listening to the visit…', thought: true }] } }] })
+    + ev({ candidates: [{ content: { parts: [{ text: json.slice(0, cut) }] } }] })
+    + ev({ candidates: [{ content: { parts: [{ text: json.slice(cut) }] }, finishReason: 'STOP' }] });
+}
+const ok = (body = answer) => new Response(sse(body), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+const fail = (status, message = 'This model is currently experiencing high demand.') => new Response(JSON.stringify({ error: { message } }), { status });
+
 function fakeFetch(calls, body = answer, status = 200) {
   return async (url, init) => {
     calls.push({ url, init });
-    return {
-      ok: status === 200,
-      status,
-      headers: { get: () => null },
-      json: async () => (status === 200
-        ? { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(body) }] } }] }
-        : { error: { message: 'quota' } }),
-    };
+    return status === 200 ? ok(body) : fail(status, 'quota');
   };
 }
 
@@ -37,13 +43,14 @@ test('sends the whole recording inline with the price list and a JSON schema', a
     customStyles: [{ code: 'JFS 2409', shape: 'Net', rate: 640 }], corrections: [['up icd', 'ruby icd']],
   });
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /\/v1beta\/models\/gemini-3\.8-flash:generateContent$/);
+  assert.match(calls[0].url, /\/v1beta\/models\/gemini-3\.8-flash:streamGenerateContent\?alt=sse$/);
   assert.equal(calls[0].init.headers['x-goog-api-key'], 'KEY');
   const req = JSON.parse(calls[0].init.body);
   const audioPart = req.contents[0].parts[0].inline_data;
   assert.equal(audioPart.mime_type, 'audio/webm');
   assert.equal(audioPart.data, Buffer.from([1, 2, 3, 4]).toString('base64'));
   assert.equal(req.generationConfig.responseMimeType, 'application/json');
+  assert.deepEqual(req.generationConfig.thinkingConfig, { thinkingLevel: 'low', includeThoughts: true });
   assert.ok(req.generationConfig.responseSchema.properties.lines);
   const sys = req.system_instruction.parts[0].text;
   assert.match(sys, /ruby-icd \| RUBY INT COLOR DRAWER ICD/);   // price list included
@@ -96,15 +103,10 @@ test('price list sent to Gemini lists size groups in size order', () => {
 function scriptedFetch(calls, statusFor) {
   return async (url, init) => {
     calls.push(url);
-    const status = statusFor(url, calls.length);
-    return {
-      ok: status === 200,
-      status,
-      headers: { get: () => null },
-      json: async () => (status === 200
-        ? { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(answer) }] } }] }
-        : { error: { message: 'This model is currently experiencing high demand.' } }),
-    };
+    const status = statusFor(url, calls.length, init);
+    if (status === 'network') throw new TypeError('Load failed');   // iPhone Safari's wording
+    if (status === 400) return fail(400, 'Unknown name "thinkingLevel" at generation_config.thinking_config');
+    return status === 200 ? ok() : fail(status);
   };
 }
 const noSleep = () => Promise.resolve();
@@ -119,7 +121,7 @@ test('503 is retried and the order still comes back', async () => {
   assert.equal(calls.length, 3);
   assert.equal(res.model, 'gemini-3.8-flash');
   assert.equal(res.lines.length, 2);
-  assert.match(statuses[0], /busy – waiting and trying again \(1\/3\)/);
+  assert.match(statuses[0], /busy or the signal dropped – trying again \(1\/3\)/);
 });
 
 test('a model that stays overloaded falls back to the next Flash model', async () => {
@@ -136,4 +138,32 @@ test('all models overloaded: friendly message, recording kept', async () => {
   await assert.rejects(analyzeConversation({ text: 'x' }, {
     apiKey: 'K', sleep: noSleep, fetchImpl: scriptedFetch([], () => 503),
   }), /overloaded right now.*recording is saved/);
+});
+
+test('iPhone "Load failed" (connection dropped) is retried and recovers', async () => {
+  const calls = [];
+  const statuses = [];
+  const res = await analyzeConversation({ text: 'Ruby ICD 85 2' }, {
+    apiKey: 'K', sleep: noSleep, onStatus: (m) => statuses.push(m),
+    fetchImpl: scriptedFetch(calls, (url, n) => (n <= 2 ? 'network' : 200)),
+  });
+  assert.equal(res.lines.length, 2);
+  assert.ok(statuses.some((m) => /signal dropped/.test(m)));
+  assert.ok(statuses.some((m) => /thinking/.test(m)));      // streamed progress shown
+});
+
+test('connection that never works: clear message, not "Load failed"', async () => {
+  await assert.rejects(analyzeConversation({ text: 'x' }, {
+    apiKey: 'K', sleep: noSleep, fetchImpl: scriptedFetch([], () => 'network'),
+  }), /connection kept dropping.*recording is saved/);
+});
+
+test('a model that rejects the thinking setting is asked again without it', async () => {
+  const calls = [];
+  const res = await analyzeConversation({ text: 'Ruby ICD 85 2' }, {
+    apiKey: 'K', sleep: noSleep,
+    fetchImpl: scriptedFetch(calls, (url, n, init) => (JSON.parse(init.body).generationConfig.thinkingConfig ? 400 : 200)),
+  });
+  assert.equal(res.lines.length, 2);
+  assert.equal(calls.length, 2);
 });

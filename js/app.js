@@ -271,7 +271,10 @@ function busy(on, text) {
 async function analyze({ audio, text }) {
   if (!settings.geminiKey) { toast('Add your Gemini API key in Settings first'); openSettings(); return; }
   if (manualEdits && order.lines.length && !confirm('This replaces the changes you made to the order lines. Continue?')) return;
-  busy(true, audio ? 'Gemini is listening to the whole conversation… (about 10–40 seconds)' : 'Gemini is reading the conversation…');
+  busy(true, audio ? 'Sending the recording to Gemini… keep this screen open' : 'Gemini is reading the conversation…');
+  // iPhones cut network requests when the screen locks or the app goes to the background
+  let wake = null;
+  try { wake = await navigator.wakeLock?.request('screen'); } catch { /* not allowed */ }
   try {
     const res = await analyzeConversation({ audio, text }, { ...geminiOptions(), onStatus: (msg) => busy(true, msg) });
     applyResult(res);
@@ -284,6 +287,7 @@ async function analyze({ audio, text }) {
     toast('Analysis failed – your recording is safe, try again');
   } finally {
     busy(false);
+    try { await wake?.release(); } catch { /* already released */ }
   }
 }
 

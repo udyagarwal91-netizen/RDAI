@@ -99,7 +99,8 @@ async function toBase64(blob) {
 // Other current Flash models to fall back to when the chosen one is
 // overloaded (503) or rate-limited. Tried in this order.
 export const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
-const BUSY = [429, 500, 502, 503, 504];
+// 0 = the connection itself failed ("Load failed" on iPhone, "Failed to fetch")
+const BUSY = [0, 429, 500, 502, 503, 504];
 
 class GeminiError extends Error {
   constructor(message, status) { super(message); this.status = status; }
@@ -110,7 +111,13 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function call(url, init, fetchImpl, { retries = 3, onRetry, sleep = wait } = {}) {
   let last;
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetchImpl(url, init);
+    let res;
+    try {
+      res = await fetchImpl(url, init);
+    } catch (err) {
+      if (err?.name === 'AbortError') throw new GeminiError('Gemini took too long to answer. Tap “Analyze recording” again.', 0);
+      res = { ok: false, status: 0, headers: null, json: async () => ({ error: { message: err?.message || 'connection failed' } }) };
+    }
     if (res.ok) return res;
     last = res;
     if (!BUSY.includes(res.status) || attempt === retries) break;
@@ -127,6 +134,7 @@ async function call(url, init, fetchImpl, { retries = 3, onRetry, sleep = wait }
   if (st === 403) throw new GeminiError('Gemini refused the API key (403). Check the key and that billing is on.', st);
   if (st === 404) throw new GeminiError(`Gemini model not found. Change the model name in Settings. (${detail})`, st);
   if (st === 429) throw new GeminiError('Gemini quota exceeded (429). Check your Gemini balance / limits, then tap Analyze again.', st);
+  if (st === 0) throw new GeminiError(`The connection to Gemini dropped (${detail}).`, 0);
   throw new GeminiError(`Gemini error ${st}: ${detail || 'please try again'}`, st);
 }
 
@@ -177,49 +185,127 @@ export async function analyzeConversation({ audio, text }, { apiKey, model, cust
     parts.push({ text: `This is the transcript of the whole shop visit (from speech-to-text, so expect mis-heard words):\n\n${text}\n\nReturn a cleaned transcript and the order.` });
   }
 
-  const body = JSON.stringify({
+  const makeBody = (thinking) => JSON.stringify({
     system_instruction: { parts: [{ text: buildInstructions({ customStyles, corrections }) }] },
     contents: [{ role: 'user', parts }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: RESPONSE_SCHEMA, maxOutputTokens: 32768 },
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: RESPONSE_SCHEMA,
+      maxOutputTokens: 32768,
+      // Picking order lines needs little reasoning: think lightly (faster), and
+      // stream thought summaries so the phone sees data flowing - iPhones drop
+      // a request that stays silent for about a minute ("Load failed").
+      ...(thinking ? { thinkingConfig: { thinkingLevel: 'low', includeThoughts: true } } : {}),
+    },
   });
+  let thinking = true;
 
-  // The chosen model first; if Google says it is overloaded, try the others.
+  // One try: stream the answer, collecting the JSON text parts.
+  const attempt = async (m) => {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl && setTimeout(() => ctrl.abort(), 5 * 60 * 1000);
+    try {
+      const res = await call(`${API}/models/${encodeURIComponent(m)}:streamGenerateContent?alt=sse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: makeBody(thinking),
+        signal: ctrl?.signal,
+      }, fetchImpl, { sleep, onRetry: (n, of) => onStatus?.(`Gemini is busy or the signal dropped – trying again (${n}/${of})…`) });
+      return await readStream(res, onStatus);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  // The chosen model first; if it stays busy/unreachable, try the others.
   const chosen = model || DEFAULT_GEMINI_MODEL;
   const models = [chosen, ...FALLBACK_MODELS.filter((m) => m !== chosen)];
-  let res = null;
+  let answer = null;
   let usedModel = chosen;
   let lastErr = null;
   for (const m of models) {
     if (m !== chosen) onStatus?.(`Gemini is busy – trying ${m}…`);
-    try {
-      res = await call(`${API}/models/${encodeURIComponent(m)}:generateContent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body,
-      }, fetchImpl, { sleep, onRetry: (n, of) => onStatus?.(`Gemini is busy – waiting and trying again (${n}/${of})…`) });
-      usedModel = m;
-      break;
-    } catch (err) {
-      lastErr = err;
-      const fallbackable = BUSY.includes(err.status) || (m !== chosen && err.status === 404);
-      if (!fallbackable) throw err;
+    for (let tries = 0; tries < 2 && !answer; tries++) {
+      try {
+        answer = await attempt(m);
+        usedModel = m;
+      } catch (err) {
+        lastErr = err;
+        // older/newer models may not take the thinking settings: retry without
+        if (err.status === 400 && thinking && /think/i.test(err.message)) { thinking = false; tries--; continue; }
+        const fallbackable = BUSY.includes(err.status) || (m !== chosen && err.status === 404);
+        if (!fallbackable) throw err;
+        if (err.status !== 0) break;          // busy: next model; dropped connection: same model once more
+        onStatus?.('The connection dropped – trying again…');
+        await sleep(2000);
+      }
     }
+    if (answer) break;
   }
-  if (!res) {
+  if (!answer) {
     if (lastErr && lastErr.status === 429) throw lastErr;
+    if (lastErr && lastErr.status === 0) {
+      throw new GeminiError('Could not reach Gemini – the connection kept dropping (weak signal, or the app went to the background). '
+        + 'Your recording is saved. Keep this screen open and tap “Analyze recording” again.', 0);
+    }
     throw new GeminiError('Google’s Gemini servers are overloaded right now (not a problem with your key or the app). '
       + 'Your recording is saved – tap “Analyze recording” again in a few minutes.', lastErr?.status);
   }
 
-  const data = await res.json();
-  if (data.promptFeedback?.blockReason) throw new Error(`Gemini blocked the request (${data.promptFeedback.blockReason}).`);
-  const cand = data.candidates?.[0];
-  if (!cand) throw new Error('Gemini returned no answer. Tap Analyze again.');
-  if (cand.finishReason === 'MAX_TOKENS') throw new Error('The visit was too long for one answer. Split it into two recordings.');
-  const raw = (cand.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
+  if (answer.blockReason) throw new Error(`Gemini blocked the request (${answer.blockReason}).`);
+  if (answer.finishReason === 'MAX_TOKENS') throw new Error('The visit was too long for one answer. Split it into two recordings.');
   let out;
-  try { out = JSON.parse(raw); } catch { throw new Error('Gemini gave an unreadable answer. Tap Analyze again.'); }
+  try { out = JSON.parse(answer.text); } catch { throw new Error('Gemini gave an unreadable answer. Tap Analyze again.'); }
   return { ...toOrderResult(out), model: usedModel };
+}
+
+// Read a streamGenerateContent (SSE) response: "data: {...}" events.
+async function readStream(res, onStatus) {
+  let text = '';
+  let finishReason = null;
+  let blockReason = null;
+  let thoughts = 0;
+  const handle = (json) => {
+    if (json.promptFeedback?.blockReason) blockReason = json.promptFeedback.blockReason;
+    const cand = json.candidates?.[0];
+    if (!cand) return;
+    if (cand.finishReason) finishReason = cand.finishReason;
+    for (const p of cand.content?.parts || []) {
+      if (p.thought) { thoughts++; onStatus?.('Gemini is listening and thinking…'); continue; }
+      if (p.text) { text += p.text; onStatus?.(`Gemini is writing the order… (${Math.round(text.length / 100) / 10}k)`); }
+    }
+  };
+  let buf = '';
+  const flushEvents = (final) => {
+    const events = buf.split(/\r?\n\r?\n/);
+    buf = final ? '' : events.pop();
+    for (const ev of events) {
+      const data = ev.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+      if (!data || data === '[DONE]') continue;
+      try { handle(JSON.parse(data)); } catch { /* partial or keep-alive */ }
+    }
+  };
+  try {
+    if (res.body && res.body.getReader) {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        flushEvents(false);
+      }
+      flushEvents(true);
+    } else {
+      buf = await res.text();
+      // a non-streamed JSON array/object is also accepted
+      if (/^\s*[[{]/.test(buf)) { const j = JSON.parse(buf); (Array.isArray(j) ? j : [j]).forEach(handle); buf = ''; } else flushEvents(true);
+    }
+  } catch (err) {
+    throw new GeminiError(`The connection to Gemini dropped (${err?.message || 'read failed'}).`, 0);
+  }
+  if (!text && !blockReason) throw new GeminiError('Gemini returned no answer.', 0);
+  return { text, finishReason, blockReason, thoughts };
 }
 
 /** Map Gemini's JSON onto the app's order-line shape (same as parseTranscript). */
