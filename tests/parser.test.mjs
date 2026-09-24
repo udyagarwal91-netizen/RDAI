@@ -178,3 +178,24 @@ test('Hindi: transliteration fallback for words not in the dictionary', () => {
   // "दे दो" (give) is not the number two
   assert.equal(parseTranscript('रूबी आईसीडी पचासी दे दो').lines.length, 0);
 });
+
+test('Hindi: a real shop visit - orders scattered between personal talk, scheme and rate questions', () => {
+  const r = parseTranscript([
+    'नमस्ते भाई साहब कैसे हो', 'सब बढ़िया है आप बताओ घर पर सब ठीक है', 'पापा की तबीयत कैसी है अब',
+    'हाँ अब ठीक है दो दिन पहले डॉक्टर को दिखाया था', 'अच्छा बताइए इस बार क्या चाहिए',
+    'रूबी आईडब्ल्यूडी पचासी में दो नब्बे में तीन पचानवे में दो',
+    'लाइट आईसीडी पचासी और नब्बे में पांच पांच डिब्बे',
+    'इसमें स्कीम क्या चल रही है', 'दस डिब्बे पर एक डिब्बा फ्री है',
+    'और कलर चार्ट दिखाओ लाइट आईसीडी में कितने कलर हैं', 'पांच कलर हैं भाई',
+    'रूबी आईसीडी का रेट पचासी में कितना है', 'आठ सौ अस्सी', 'ठीक है',
+    'क्लासिक जिम बनियान पचासी तीन पचानवे चार सौ चार', 'मार्कोस कलर ब्रीफ पचासी दो नब्बे तीन',
+    'बच्चों की शादी कब है', 'अगले महीने है भाई जरूर आना', 'हाँ हाँ जरूर',
+    'अच्छा नटखट प्रिंट बनियान साठ पैंसठ सत्तर में चार चार डिब्बे',
+    'और रूबी आईडब्ल्यूडी में पचासी तीन कर दो', 'पेमेंट तीस दिन में कर देंगे',
+  ].join('\n'));
+  const L = byDesc(r);
+  assert.deepEqual(Object.keys(L).sort(), ['classic-gym', 'lite-icd', 'marcos-cbrief', 'natkhat-rn', 'ruby-iwd']);
+  assert.deepEqual(L['ruby-iwd'].qty, { 85: 3, 90: 3, 95: 2 });   // later correction wins
+  assert.deepEqual(L['lite-icd'].qty, { 85: 5, 90: 5 });
+  assert.deepEqual(L['natkhat-rn'].qty, { 60: 4, 65: 4, 70: 4 });
+});

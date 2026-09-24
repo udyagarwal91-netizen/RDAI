@@ -21,12 +21,34 @@ export class Listener {
     if (!Recognition) throw new Error('Speech recognition is not available in this browser. Use Chrome on Android or desktop.');
     this.active = true;
     this._spawn();
+    this._keepAwake();
     this.onState?.('listening');
+  }
+
+  // Chrome stops listening when the screen locks, so hold a screen wake
+  // lock for the whole shop visit (re-taken if the tab comes back).
+  async _keepAwake() {
+    if (!('wakeLock' in navigator) || !this.active) return;
+    try {
+      this.wake = await navigator.wakeLock.request('screen');
+    } catch { /* battery saver or unsupported: screen may still sleep */ }
+    if (!this._onVisible) {
+      this._onVisible = () => {
+        if (document.visibilityState === 'visible' && this.active) {
+          this._keepAwake();
+          if (!this.rec) this._spawn();
+        }
+      };
+      document.addEventListener('visibilitychange', this._onVisible);
+    }
   }
 
   stop() {
     this.active = false;
+    try { this.wake?.release(); } catch { /* already released */ }
+    this.wake = null;
     try { this.rec?.stop(); } catch { /* already stopped */ }
+    this.rec = null;
     this.onInterim?.('');
     this.onState?.('idle');
   }
@@ -57,7 +79,8 @@ export class Listener {
       this.onError?.(`Speech error: ${e.error}`);
     };
     rec.onend = () => {
-      if (this.active) {
+      this.rec = null;
+      if (this.active && document.visibilityState === 'visible') {
         // Browsers end recognition after silence or ~60s; carry on.
         setTimeout(() => { if (this.active) this._spawn(); }, 150);
       }
