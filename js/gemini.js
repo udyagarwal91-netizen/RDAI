@@ -41,7 +41,7 @@ How orders are spoken:
 - Quantities are boxes of 10 pcs (Sofiyaa and Honey: dozens). "Dus dabbe par ek free" is a scheme, not an order. "Rate kya hai" is a question, not an order.
 - Styles not in the price list (e.g. "JFS 2409", "AHW 613", "SP 42", "ADT 701", "F 46"): product_id "" and the code in style_code. A bare number like "2505" right after "JFS 2409" is "JFS 2505". Their shape is usually "Net" or "WSP (-15%)" (wholesale less a percentage); "same" repeats the previous shape.
 - RN = round neck vest, RNS = round neck with sleeves, O/E / I/E = outer / inner elastic.
-- The customer/shop name and town are often said at the start ("party ka naam ... , Sibsagar se"). Transport ("Assam Roadways se bhejna") goes in transport.
+- customer: the shop / party name and its town are ALWAYS needed for the order form. They can come anywhere - start, middle or end - and often without any "party ka naam" phrase: the rep may just say "Sahak Cloth Store, Dibrugarh" or the shopkeeper may say "likho, Manoj Textiles". Put them in customer.name and customer.place (English letters, proper capitals). Never count the shop name or town as "not order" talk. Transport ("Assam Roadways se bhejna") goes in customer.transport.
 - For every line, quote in "heard" the words from the conversation that gave you that line, and put anything you are unsure of in "note". Never invent a line you did not hear.
 ${custom}${fixes}
 Price list (id | name | shape | unit | size-group@rate per box):
@@ -54,7 +54,11 @@ export const RESPONSE_SCHEMA = S('OBJECT', {
   properties: {
     transcript: S('STRING', { description: 'Whole conversation in English letters, one turn per line, "Rep:" / "Customer:"' }),
     customer: S('OBJECT', {
-      properties: { name: S('STRING'), place: S('STRING'), transport: S('STRING') },
+      properties: {
+        name: S('STRING', { description: 'Shop / party name as said anywhere in the visit, e.g. "Sahak Cloth Store"; empty only if never said' }),
+        place: S('STRING', { description: 'Town of the shop, e.g. "Dibrugarh"' }),
+        transport: S('STRING', { description: 'Transport / carrier if said' }),
+      },
       required: ['name', 'place', 'transport'],
     }),
     lines: S('ARRAY', {
@@ -72,7 +76,7 @@ export const RESPONSE_SCHEMA = S('OBJECT', {
         required: ['product_id', 'style_code', 'shape', 'quantities', 'heard', 'note'],
       }),
     }),
-    not_order: S('STRING', { description: 'One short sentence: what non-order talk was left out' }),
+    not_order: S('STRING', { description: 'One short sentence: what non-order talk was left out (greetings, family, schemes, rates...). The shop name/town are NOT left out - they go in customer.' }),
   },
   required: ['transcript', 'customer', 'lines', 'not_order'],
 });

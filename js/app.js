@@ -82,7 +82,12 @@ function fillFields() {
 }
 
 for (const [id, , set] of FIELDS) {
-  $(id).addEventListener('input', (e) => { set(e.target.value); saveDraft(); schedulePreview(); });
+  $(id).addEventListener('input', (e) => {
+    set(e.target.value);
+    order.typed = { ...(order.typed || {}), [id]: !!e.target.value.trim() };
+    saveDraft();
+    schedulePreview();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -232,9 +237,12 @@ function knownStyleRates(lines) {
 
 function applyResult(res) {
   const h = res.header || {};
-  if (h.name && !order.customer.name) order.customer.name = h.name;
-  if (h.place && !order.customer.line2) order.customer.line2 = h.place;
-  if (h.transport && !order.transport) order.transport = h.transport;
+  // What was heard in this visit wins, unless you typed that box yourself
+  // for this order (a name left over from an earlier order is replaced).
+  const typed = order.typed || {};
+  if (h.name && !typed['f-name']) order.customer.name = h.name;
+  if (h.place && !typed['f-line2']) order.customer.line2 = h.place;
+  if (h.transport && !typed['f-transport']) order.transport = h.transport;
   if (res.transcript) order.transcript = res.transcript;
   knownStyleRates(res.lines);
   order.lines = res.lines;

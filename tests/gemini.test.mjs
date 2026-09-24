@@ -167,3 +167,10 @@ test('a model that rejects the thinking setting is asked again without it', asyn
   assert.equal(res.lines.length, 2);
   assert.equal(calls.length, 2);
 });
+
+test('shop name said anywhere (no "party ka naam") must go in customer, not "left out"', () => {
+  const s = buildInstructions();
+  assert.match(s, /ALWAYS needed for the order form/);
+  assert.match(s, /Sahak Cloth Store, Dibrugarh/);
+  assert.match(s, /Never count the shop name or town as "not order" talk/);
+});
