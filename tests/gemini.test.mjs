@@ -85,3 +85,9 @@ test('instructions cover the Hindi patterns found in real visits', () => {
   assert.match(s, /bare "ICD" means Ruby ICD/);
   assert.equal(toOrderResult({ lines: [] }).lines.length, 0);
 });
+
+test('price list sent to Gemini lists size groups in size order', () => {
+  const s = buildInstructions();
+  assert.match(s, /ezee-wf-rn \| EZEE WHITE FOLDING RN \| shape RN \| box \| 40-45-50@330 55-60-65@370 70@410 73@450 75@600 80-85-90@640 95-100@740/);
+  assert.match(s, /natkhat-rn \| NATKHAT PRINT RN \| shape RN \| box \| 35@460 40-45-50@490/);
+});

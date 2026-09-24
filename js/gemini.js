@@ -3,7 +3,7 @@
 //   2. only the order: product, sizes, quantities - with the small talk,
 //      scheme / rate / family chat filtered out.
 // The API key is stored on the phone and requests go straight to Google.
-import { CATALOG, CATALOG_BY_ID, KIDS_SIZES, ADULT_SIZES } from './catalog.js';
+import { CATALOG, CATALOG_BY_ID, KIDS_SIZES, ADULT_SIZES, sizeGroups } from './catalog.js';
 import { newLineId } from './parser.js';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
@@ -12,7 +12,7 @@ const INLINE_LIMIT = 14 * 1024 * 1024;   // request cap is 20 MB incl. base64 ov
 
 function catalogText() {
   return CATALOG.map((p) => {
-    const sizes = Object.entries(p.priceGroups).map(([k, r]) => `${k}@${r}`).join(' ');
+    const sizes = sizeGroups(p).map(([k, r]) => `${k}@${r}`).join(' ');
     return `${p.id} | ${p.name} | shape ${p.shape || '-'} | ${p.unit} | ${sizes}`;
   }).join('\n');
 }

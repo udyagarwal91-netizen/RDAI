@@ -265,6 +265,12 @@ export const CATALOG = RAW.map(([id, name, short, shape, section, prices, mrp, a
   unit: unit || 'box',
 }));
 
+// Size groups in size order ("40-45-50" before "70"). Object key order puts
+// single-number keys like "70" first, so never list priceGroups directly.
+export function sizeGroups(product) {
+  return Object.entries(product.priceGroups).sort((a, b) => parseInt(a[0], 10) - parseInt(b[0], 10));
+}
+
 export const CATALOG_BY_ID = Object.fromEntries(CATALOG.map((p) => [p.id, p]));
 
 export function rateFor(product, size) {

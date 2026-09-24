@@ -1,4 +1,4 @@
-import { CATALOG, CATALOG_BY_ID, ADULT_SIZES, KIDS_SIZES } from './catalog.js';
+import { CATALOG, CATALOG_BY_ID, ADULT_SIZES, KIDS_SIZES, sizeGroups } from './catalog.js';
 import { parseTranscript, setCustomProducts, newLineId, setCorrections } from './parser.js';
 import { analyzeConversation, DEFAULT_GEMINI_MODEL } from './gemini.js';
 import { Recorder, recordingSupported, formatDuration, saveRecording, loadRecording } from './recorder.js';
@@ -515,7 +515,7 @@ function renderPrices(q = '') {
   });
   $('price-table').innerHTML = `<table><thead><tr><th>Product</th><th>Shape</th><th>Size @ rate</th><th>MRP</th></tr></thead><tbody>${
     rows.map((p) => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.shape)}</td><td class="r">${
-      Object.entries(p.priceGroups).map(([k, r]) => `${k}: ₹${r}${p.unit === 'doz' ? '/dz' : ''}`).join('<br>')}</td><td>${p.mrp ?? ''}</td></tr>`).join('')
+      sizeGroups(p).map(([k, r]) => `${k}: ₹${r}${p.unit === 'doz' ? '/dz' : ''}`).join('<br>')}</td><td>${p.mrp ?? ''}</td></tr>`).join('')
   }</tbody></table>`;
 }
 $('btn-prices').addEventListener('click', () => { renderPrices($('price-search').value); $('dlg-prices').showModal(); });
