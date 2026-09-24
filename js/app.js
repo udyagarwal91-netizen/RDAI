@@ -128,7 +128,7 @@ function lineHtml(line, idx) {
     </div>
     <div class="sizes">${sizes}</div>
     <div class="line-foot">${p ? `<span>${escapeHtml(p.name)}</span>` : '<span></span>'}${price}</div>
-    ${line.heard ? `<span class="heard">Heard: “${escapeHtml(line.heard)}”</span>` : ''}
+    ${line.heard ? `<span class="heard">Heard${line.turns && line.turns.length ? ` (turn ${line.turns.join(', ')})` : ''}: “${escapeHtml(line.heard)}”</span>` : ''}
   </div>`;
 }
 
@@ -254,7 +254,8 @@ function applyResult(res) {
 
   const notes = [];
   if (res.warnings.length) notes.push(`<b>Please check:</b><ul>${res.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
-  if (res.ignored.length) notes.push(`<b>Left out (not order talk):</b><ul>${res.ignored.slice(-6).map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
+  if (res.asked && res.asked.length) notes.push(`<b>Not ordered (only asked about, or cancelled):</b><ul>${res.asked.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
+  if (res.ignored.length) notes.push(`<b>Other talk left out:</b><ul>${res.ignored.slice(-6).map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`);
   $('parse-notes').innerHTML = notes.join('');
   $('parse-notes').hidden = !notes.length;
   toast(`${res.lines.length} item${res.lines.length === 1 ? '' : 's'} found`);
@@ -279,7 +280,7 @@ function busy(on, text) {
 async function analyze({ audio, text }) {
   if (!settings.geminiKey) { toast('Add your Gemini API key in Settings first'); openSettings(); return; }
   if (manualEdits && order.lines.length && !confirm('This replaces the changes you made to the order lines. Continue?')) return;
-  busy(true, audio ? 'Sending the recording to Gemini… keep this screen open' : 'Gemini is reading the conversation…');
+  busy(true, audio ? 'Step 1 of 2: sending the recording… keep this screen open' : 'Gemini is reading the conversation…');
   // iPhones cut network requests when the screen locks or the app goes to the background
   let wake = null;
   try { wake = await navigator.wakeLock?.request('screen'); } catch { /* not allowed */ }
@@ -382,9 +383,11 @@ $('btn-reanalyze-text').addEventListener('click', () => {
   if (!text.trim()) { toast('No conversation text yet'); return; }
   order.transcript = text;
   if (settings.geminiKey) { analyze({ text }); return; }
-  // no key: the built-in (offline) reader
+  // no key: the built-in (offline) reader; drop the "[4] Customer:" labels
   if (manualEdits && order.lines.length && !confirm('This replaces the changes you made to the order lines. Continue?')) return;
-  applyResult(parseTranscript(text));
+  const plain = text.split('\n').map((l) => l.replace(/^\s*(\[\d+\]\s*)?((Rep|Customer|Other)\s*:\s*)?/i, '')).join('\n');
+  const res = parseTranscript(plain);
+  applyResult({ ...res, transcript: text });
 });
 
 $('btn-copy-talk').addEventListener('click', async () => {
