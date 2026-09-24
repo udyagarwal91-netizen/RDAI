@@ -2,6 +2,7 @@ import { CATALOG, CATALOG_BY_ID, ADULT_SIZES, KIDS_SIZES } from './catalog.js';
 import { parseTranscript, setCustomProducts, newLineId } from './parser.js';
 import { parseWithClaude, DEFAULT_MODEL } from './ai.js';
 import { Listener, speechSupported } from './speech.js';
+import { toRomanScript } from './hindi.js';
 import { renderOrderForm, canvasToJpeg, ensureFonts } from './form-render.js';
 import { emptyOrder, lineTotals, lineRate, orderTotals, unitOf, inr } from './order.js';
 
@@ -23,6 +24,7 @@ let settings = { apiKey: '', model: DEFAULT_MODEL, custom: '', lang: 'hi-IN', pr
 // v2: most orders are spoken in Hindi, so Hindi became the default language.
 if (!settings.v) { settings.lang = 'hi-IN'; settings.v = 2; store.set('vob.settings', settings); }
 let order = store.get('vob.draft', null) || emptyOrder();
+order.transcript = toRomanScript(order.transcript);
 let manualEdits = false;
 
 function parseCustomStyles(text) {
@@ -287,7 +289,9 @@ let listener = null;
 function startListening() {
   listener = new Listener({
     lang: settings.lang,
-    onFinal: (txt) => {
+    onFinal: (heard) => {
+      // Hindi is recognised in Devanagari; show it in English letters.
+      const txt = toRomanScript(heard);
       const ta = $('f-transcript');
       ta.value = (ta.value ? `${ta.value.replace(/\s+$/, '')}\n` : '') + txt;
       ta.scrollTop = ta.scrollHeight;
@@ -295,7 +299,7 @@ function startListening() {
       saveDraft();
       if ($('f-live').checked) runOffline({ silent: true });
     },
-    onInterim: (txt) => { $('interim').textContent = txt; },
+    onInterim: (txt) => { $('interim').textContent = toRomanScript(txt); },
     onState: (s) => {
       const on = s === 'listening';
       $('btn-mic').classList.toggle('on', on);

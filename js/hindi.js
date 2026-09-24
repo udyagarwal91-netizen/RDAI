@@ -112,6 +112,18 @@ const WORDS = {
   'लिखो': 'likho', 'लिख': 'likh', 'भेजो': 'bhejo', 'भेज': 'bhej', 'जी': 'ji', 'हां': 'haan', 'हाँ': 'haan', 'ठीक': 'theek',
   'सर': 'sir', 'भाई': 'bhai', 'भैया': 'bhaiya', 'टू': 'to', 'फॉर': 'for', 'एंड': 'and', 'ईच': 'each',
   'दो': 'do', 'सौ': 'hundred', 'हंड्रेड': 'hundred',
+  // English words said in Hindi, so the transcript reads naturally in Roman
+  'टेक्सटाइल्स': 'textiles', 'टेक्सटाइल': 'textile', 'स्टोर': 'store', 'स्टोर्स': 'stores', 'ट्रेडर्स': 'traders',
+  'एंटरप्राइजेज': 'enterprises', 'एंटरप्राइज': 'enterprise', 'गारमेंट्स': 'garments', 'होजरी': 'hosiery', 'हौजरी': 'hosiery',
+  'हैंडलूम': 'handloom', 'फैशन': 'fashion', 'कलेक्शन': 'collection', 'सेंटर': 'centre', 'ब्रदर्स': 'brothers', 'संस': 'sons',
+  'हाउस': 'house', 'एम्पोरियम': 'emporium', 'मार्ट': 'mart', 'बाजार': 'bazaar', 'बाज़ार': 'bazaar',
+  'स्कीम': 'scheme', 'फ्री': 'free', 'ऑफर': 'offer', 'पेमेंट': 'payment', 'बिल': 'bill', 'स्टॉक': 'stock',
+  'डिलीवरी': 'delivery', 'चार्ट': 'chart', 'कैटलॉग': 'catalogue', 'सैंपल': 'sample', 'क्वालिटी': 'quality',
+  'वैरायटी': 'variety', 'स्टाइल': 'style', 'पैकिंग': 'packing', 'जार': 'jar', 'मीडियम': 'medium', 'स्मॉल': 'small',
+  'लार्ज': 'large', 'डॉक्टर': 'doctor', 'टाइम': 'time', 'मोबाइल': 'mobile', 'फोन': 'phone', 'ओके': 'ok',
+  'थैंक्यू': 'thank you', 'सॉरी': 'sorry', 'प्लीज': 'please', 'सेल': 'sale', 'कंपनी': 'company', 'मार्केट': 'market',
+  'आप': 'aap', 'आपका': 'aapka', 'आपको': 'aapko', 'आना': 'aana', 'जाना': 'jaana', 'काम': 'kaam', 'दाम': 'daam',
+  'माल': 'maal', 'साल': 'saal', 'आज': 'aaj', 'बाकी': 'baaki', 'बात': 'baat', 'ज़रूर': 'zaroor', 'जरूर': 'zaroor',
 };
 const WORD_MAP = new Map(Object.entries(WORDS).map(([k, v]) => [cleanDevanagari(k), v]));
 
@@ -136,7 +148,7 @@ function lettersOf(word) {
       if (word.startsWith(name, i) && best[i + name.length] == null) best[i + name.length] = best[i] + letter;
     }
   }
-  return best[n] && best[n].length >= 2 ? best[n] : null;
+  return best[n] && best[n].length >= 2 ? best[n].toUpperCase() : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +202,17 @@ export function transliterate(word) {
 // ---------------------------------------------------------------------------
 const DEVANAGARI_WORD = /[ऀ-ॿ]+/g;
 
+// For showing the transcript in English letters: "रूबी आईडब्ल्यूडी पचासी में दो"
+// -> "Ruby IWD 85 mein do". Line breaks are kept.
+export function toRomanScript(text) {
+  if (!hasDevanagari(text)) return String(text || '');
+  return String(text).split('\n').map((line) => {
+    const r = devanagariToRoman(line)
+      .replace(/[ \t]+/g, ' ').replace(/ ([,.?!])/g, '$1').replace(/([.?!])\1+/g, '$1').trim();
+    return r.charAt(0).toUpperCase() + r.slice(1);
+  }).join('\n');
+}
+
 export function hasDevanagari(text) {
   return /[ऀ-ॿ]/.test(String(text || ''));
 }
@@ -198,12 +221,19 @@ export function devanagariToRoman(text) {
   let s = cleanDevanagari(text);
   if (!hasDevanagari(s)) return s;
   s = s.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x966)).replace(/।|॥/g, '. ');
+  // "एक सौ दस" -> 110, bare "सौ" -> 100
+  const one = cleanDevanagari('एक');
+  s = s.replace(new RegExp(`(?:(${one})\\s+)?${cleanDevanagari('सौ')}(?:\\s+([\\u0900-\\u097F]+))?`, 'g'), (m, ek, nxt) => {
+    const v = nxt && DEVANAGARI_NUMBERS.get(nxt);
+    if (ek && v && v <= 30) return ` ${100 + v} `;
+    return ` 100 ${nxt || ''} `;
+  });
   // multi-word phrases first
   s = s.replace(/हटा\s+दो/g, 'hatao').replace(/एक\s*-\s*एक/g, 'each').replace(/दे\s+दो/g, 'de dijiye');
   return s.replace(DEVANAGARI_WORD, (w) => {
     if (DEVANAGARI_NUMBERS.has(w) && !WORD_MAP.has(w)) return ` ${DEVANAGARI_NUMBERS.get(w)} `;
     if (WORD_MAP.has(w)) return ` ${WORD_MAP.get(w)} `;
-    if (LETTER_MAP.has(w) && !NOT_LETTER_ALONE.has(w)) return ` ${LETTER_MAP.get(w)} `;
+    if (LETTER_MAP.has(w) && !NOT_LETTER_ALONE.has(w)) return ` ${LETTER_MAP.get(w).toUpperCase()} `;
     const letters = lettersOf(w);
     if (letters) return ` ${letters} `;
     return ` ${transliterate(w)} `;

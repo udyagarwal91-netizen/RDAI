@@ -174,7 +174,7 @@ test('Hindi: transliteration fallback for words not in the dictionary', () => {
   assert.equal(transliterate('नटखट'), 'natkhat');
   assert.equal(transliterate('चुनमुन'), 'chunmun');
   assert.equal(transliterate('मार्कोस'), 'markos');
-  assert.match(devanagariToRoman('आरएनएस'), /\brns\b/);
+  assert.match(devanagariToRoman('आरएनएस'), /\bRNS\b/);
   // "दे दो" (give) is not the number two
   assert.equal(parseTranscript('रूबी आईसीडी पचासी दे दो').lines.length, 0);
 });
@@ -198,4 +198,23 @@ test('Hindi: a real shop visit - orders scattered between personal talk, scheme 
   assert.deepEqual(L['ruby-iwd'].qty, { 85: 3, 90: 3, 95: 2 });   // later correction wins
   assert.deepEqual(L['lite-icd'].qty, { 85: 5, 90: 5 });
   assert.deepEqual(L['natkhat-rn'].qty, { 60: 4, 65: 4, 70: 4 });
+});
+
+test('Hindi shown in English letters parses the same as the Devanagari', async () => {
+  const { toRomanScript } = await import('../js/hindi.js');
+  const hindi = 'पार्टी का नाम मनोज टेक्सटाइल्स है, सिबसागर से।\nनमस्ते भाई कैसे हो\n'
+    + 'रूबी आईडब्ल्यूडी पचासी में दो नब्बे में तीन पचानवे में दो सौ में दो\n'
+    + 'इसमें स्कीम क्या चल रही है\nदस डिब्बे पर एक डिब्बा फ्री है\n'
+    + 'मार्कोस कलर ब्रीफ एक सौ दस में चार, एक सौ पांच में दो\n'
+    + 'नटखट प्रिंट बनियान साठ पैंसठ सत्तर में चार चार डिब्बे\nलाइट ब्रीफ पचासी दो\nलाइट ब्रीफ हटा दो\nलिख दो भाई';
+  const roman = toRomanScript(hindi);
+  assert.ok(!/[ऀ-ॿ]/.test(roman));
+  assert.match(roman, /^Party ka naam manoj textiles hai, sibsagar se\./);
+  assert.match(roman, /Ruby IWD 85 mein do 90 mein 3/);
+  const a = parseTranscript(hindi);
+  const b = parseTranscript(roman);
+  const strip = (r) => r.lines.map((l) => [l.productId || l.desc, l.qty]);
+  assert.deepEqual(strip(b), strip(a));
+  assert.deepEqual(b.header, { name: 'Manoj Textiles', place: 'Sibsagar' });
+  assert.deepEqual(byDesc(b)['marcos-cbrief'].qty, { 105: 2, 110: 4 });
 });
