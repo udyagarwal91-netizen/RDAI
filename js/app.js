@@ -1,5 +1,5 @@
 import { CATALOG, CATALOG_BY_ID, ADULT_SIZES, KIDS_SIZES } from './catalog.js';
-import { parseTranscript, setCustomProducts, newLineId } from './parser.js';
+import { parseTranscript, setCustomProducts, newLineId, setCorrections, fixMisheard } from './parser.js';
 import { parseWithClaude, DEFAULT_MODEL } from './ai.js';
 import { Listener, speechSupported } from './speech.js';
 import { toRomanScript } from './hindi.js';
@@ -24,7 +24,14 @@ let settings = { apiKey: '', model: DEFAULT_MODEL, custom: '', lang: 'hi-IN', pr
 // v2: most orders are spoken in Hindi, so Hindi became the default language.
 if (!settings.v) { settings.lang = 'hi-IN'; settings.v = 2; store.set('vob.settings', settings); }
 let order = store.get('vob.draft', null) || emptyOrder();
-order.transcript = toRomanScript(order.transcript);
+// "heard = correct" lines from Settings, e.g. "up icd = ruby icd"
+function parseFixes(text) {
+  return String(text || '').split('\n').map((row) => row.split('=').map((s) => s.trim())).filter((r) => r[0] && r[1]);
+}
+setCorrections(parseFixes(settings.fixes));
+// What the transcript box shows: English letters, known mishearings fixed.
+const shown = (heard) => fixMisheard(toRomanScript(heard));
+order.transcript = shown(order.transcript);
 let manualEdits = false;
 
 function parseCustomStyles(text) {
@@ -265,6 +272,18 @@ $('btn-ai').addEventListener('click', async () => {
   }
 });
 
+$('btn-copy-talk').addEventListener('click', async () => {
+  const text = $('f-transcript').value;
+  if (!text.trim()) { toast('Nothing to copy yet'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Transcript copied - paste it anywhere (WhatsApp, chat…)');
+  } catch {
+    $('f-transcript').select();
+    toast('Select-all done - tap Copy');
+  }
+});
+
 $('btn-clear-talk').addEventListener('click', () => {
   if ($('f-transcript').value && !confirm('Clear the transcript?')) return;
   $('f-transcript').value = '';
@@ -291,7 +310,7 @@ function startListening() {
     lang: settings.lang,
     onFinal: (heard) => {
       // Hindi is recognised in Devanagari; show it in English letters.
-      const txt = toRomanScript(heard);
+      const txt = shown(heard);
       const ta = $('f-transcript');
       ta.value = (ta.value ? `${ta.value.replace(/\s+$/, '')}\n` : '') + txt;
       ta.scrollTop = ta.scrollHeight;
@@ -299,7 +318,7 @@ function startListening() {
       saveDraft();
       if ($('f-live').checked) runOffline({ silent: true });
     },
-    onInterim: (txt) => { $('interim').textContent = toRomanScript(txt); },
+    onInterim: (txt) => { $('interim').textContent = shown(txt); },
     onState: (s) => {
       const on = s === 'listening';
       $('btn-mic').classList.toggle('on', on);
@@ -458,6 +477,7 @@ function openSettings() {
   $('s-key').value = settings.apiKey || '';
   $('s-model').value = settings.model || DEFAULT_MODEL;
   $('s-custom').value = settings.custom || '';
+  $('s-fixes').value = settings.fixes || '';
   $('dlg-settings').showModal();
 }
 $('btn-settings').addEventListener('click', openSettings);
@@ -466,6 +486,13 @@ $('dlg-settings').addEventListener('close', () => {
   settings.apiKey = $('s-key').value.trim();
   settings.model = $('s-model').value.trim() || DEFAULT_MODEL;
   settings.custom = $('s-custom').value;
+  settings.fixes = $('s-fixes').value;
+  setCorrections(parseFixes(settings.fixes));
+  if ($('f-transcript').value) {
+    $('f-transcript').value = shown($('f-transcript').value);
+    order.transcript = $('f-transcript').value;
+    saveDraft();
+  }
   store.set('vob.settings', settings);
   setCustomProducts(parseCustomStyles(settings.custom));
   // apply rates of known custom styles to current lines

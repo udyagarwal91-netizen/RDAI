@@ -183,7 +183,7 @@ const isSizeValue = (n) => (n >= 30 && n <= 130 && n % 5 === 0) || n === 73;
 
 function preNormalise(text) {
   // Hindi (Devanagari) speech output -> romanised Hinglish first
-  let s = ` ${devanagariToRoman(text).toLowerCase()} `;
+  let s = ` ${applyCorrections(devanagariToRoman(applyCorrections(text))).toLowerCase()} `;
   // Devanagari digits -> ASCII
   s = s.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x966));
   s = s.replace(/%/g, ' percent ');
@@ -195,6 +195,7 @@ function preNormalise(text) {
     [/\brace\s*(4|four|for)\b/g, ' race4 '],
     [/\b(easy|ezee|ezy|eazy)\s*line\b/g, ' ezeeline '],
     [/\b(hi|high)[\s-]*cut\b/g, ' hicut '],
+    [/\bup\s*to\b/g, ' upto '],
     [/\bt[\s-]*shirts?\b/g, ' tshirt '],
     [/\bround\s*neck\s*(with\s*)?(half\s*)?sleeves?\b/g, ' rns '],
     [/\bround\s*neck\b/g, ' rn '],
@@ -263,6 +264,150 @@ function wordNumber(tokens, i) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Mishearing repair
+// ---------------------------------------------------------------------------
+// The phone's speech engine does not know our brand names, so "Ruby ICD"
+// often arrives as "UP ICD", "रुपए ICD" or "Ravi ICD". A word right before a
+// product word (ICD, drawer, vest, colour...) that sounds like a brand is
+// taken as that brand.
+
+const BRAND_NAMES = {
+  ruby: 'Ruby', lite: 'Lite', ezee: 'Ezee', ezeeline: 'Ezeeline', advans: 'Advans', classic: 'Classic',
+  chunmun: 'Chunmun', genteez: 'Genteez', hot: 'Hot', marcos: 'Marcos', natkhat: 'Natkhat', honey: 'Honey',
+  race4: 'Race4', lovely: 'Lovely', sofiyaa: 'Sofiyaa', karina: 'Karina', lily: 'Lily',
+};
+
+// Known mishearings (romanised), checked before the sound-alike test.
+const MISHEARD = {
+  up: 'ruby', upi: 'ruby', rupee: 'ruby', rupees: 'ruby', rupe: 'ruby', rupay: 'ruby', rupaye: 'ruby', rupiya: 'ruby',
+  rupya: 'ruby', rupye: 'ruby', rubi: 'ruby', roobi: 'ruby', rabi: 'ruby', ravi: 'ruby', robi: 'ruby', rubee: 'ruby',
+  ruvi: 'ruby', rumi: 'ruby', lubi: 'ruby', rubby: 'ruby', rb: 'ruby', rubia: 'ruby', rubina: 'ruby', baby: 'ruby',
+  late: 'lite', let: 'lite', lait: 'lite', laid: 'lite', like: 'lite', life: 'lite', lyte: 'lite', lights: 'lite',
+  lat: 'lite', lete: 'lite',
+  easy: 'ezee', isi: 'ezee', isee: 'ezee', izee: 'ezee', eji: 'ezee', ezi: 'ezee', essy: 'ezee', ez: 'ezee', ec: 'ezee', eg: 'ezee',
+  marks: 'marcos', mark: 'marcos', markus: 'marcos', marcus: 'marcos', markas: 'marcos', markose: 'marcos', marko: 'marcos',
+  marker: 'marcos', marx: 'marcos', mercus: 'marcos', markos: 'marcos',
+  classy: 'classic', classics: 'classic', glassic: 'classic', klasik: 'classic', clasik: 'classic', plastic: 'classic',
+  natak: 'natkhat', natkhad: 'natkhat', natkat: 'natkhat', nutkhut: 'natkhat', notkhat: 'natkhat',
+  sophia: 'sofiyaa', safia: 'sofiyaa', sofia: 'sofiyaa', sufia: 'sofiyaa', sophie: 'sofiyaa', sofie: 'sofiyaa', saifiya: 'sofiyaa',
+  gents: 'genteez', gentes: 'genteez', jents: 'genteez', gentis: 'genteez', jentis: 'genteez', gentle: 'genteez',
+  advance: 'advans', advent: 'advans', edvans: 'advans', adwans: 'advans',
+  carina: 'karina', kareena: 'karina', corona: 'karina', karine: 'karina',
+  lovley: 'lovely', lovli: 'lovely', lavli: 'lovely', lavly: 'lovely',
+  honi: 'honey', hani: 'honey', hunny: 'honey', hanee: 'honey',
+  chunnu: 'chunmun', chunmunn: 'chunmun', lili: 'lily', lilly: 'lily',
+};
+
+// Words that may follow a brand. Only these can trigger a repair.
+const PRODUCT_NEXT = new Set([
+  'icd', 'iwd', 'icdp', 'rcd', 'cd', 'cj', 'ipd', 'opd', 'rn', 'rns', 'oe', 'ie', 'fe',
+  'drawer', 'brief', 'trunk', 'vest', 'jokee', 'boxer', 'bermuda', 'penteez', 'bloomer', 'sameez', 'shorts', 'tshirt',
+  'gym', 'color', 'white', 'grey', 'black', 'print', 'plain', 'pocket', 'long', 'mini', 'mid', 'lycra', 'folding',
+  'interlock', 'chainlock', 'superfine', 'parker', 'rib', 'stripe', 'hicut', 'sporto', 'frenchy', 'premium', 'design',
+]);
+
+// Rough sound key for Indian-English speech: b/p/v/w, d/t, g/j/k, s/z alike.
+function soundKey(w) {
+  let k = w.toLowerCase().replace(/[^a-z]/g, '')
+    .replace(/ph/g, 'f').replace(/gh/g, '').replace(/ck/g, 'k').replace(/([kgcsdtb])h/g, '$1')
+    .replace(/c(?=[eiy])/g, 's').replace(/[cq]/g, 'k').replace(/x/g, 'ks');
+  k = k.replace(/[pvw]/g, 'b').replace(/t/g, 'd').replace(/[gj]/g, 'k').replace(/z/g, 's');
+  return k.replace(/[aeiouyh]/g, '').replace(/(.)\1+/g, '$1');
+}
+const BRAND_KEYS = Object.keys(BRAND_NAMES).map((b) => [b, soundKey(b)]).filter(([, k]) => k.length >= 2);
+
+function brandHasWord(brand, word) {
+  return INDEX.entries.some((e) => e.brand === brand && e.kw.has(word));
+}
+
+/** If `word` (heard right before `nextWord`) is probably a misheard brand, return the brand. */
+export function misheardBrand(word, nextWord) {
+  const w = String(word || '').toLowerCase();
+  const nx = SYNONYMS[nextWord] || nextWord;
+  if (!w || !PRODUCT_NEXT.has(nx)) return null;
+  const direct = SYNONYMS[w] || w;
+  if (BRANDS.includes(direct)) return null;
+  let brand = MISHEARD[w] || null;
+  if (!brand && (INDEX.vocab.has(direct) || NOT_CODE.has(w) || CONNECTORS.has(w))) return null;
+  if (!brand) {
+    const key = soundKey(w);
+    if (key.length >= 2) {
+      for (const [b, bk] of BRAND_KEYS) {
+        if (key === bk || (key.length >= 4 && bk.length >= 4 && levenshtein(key, bk) <= 1)) { brand = b; break; }
+      }
+    }
+  }
+  return brand && brandHasWord(brand, nx) ? brand : null;
+}
+
+// Product codes misheard by one similar-sounding letter: ICT -> ICD, IVD -> IWD.
+const CODE_LIST = ['icd', 'iwd', 'icdp', 'rcd', 'ipd', 'opd', 'rns', 'oe', 'ie'];
+const SOUND_CLASS = {};
+for (const group of ['dtg', 'wvbu', 'csk', 'nm', 'ea']) for (const c of group) SOUND_CLASS[c] = group;
+export function misheardCode(word) {
+  const w = String(word || '').toLowerCase();
+  if (w.length < 2 || w.length > 4 || INDEX.vocab.has(w) || NOT_CODE.has(w)) return null;
+  for (const code of CODE_LIST) {
+    if (code.length !== w.length) continue;
+    let diff = 0;
+    let ok = true;
+    for (let i = 0; i < w.length; i++) {
+      if (w[i] === code[i]) continue;
+      diff++;
+      if (!SOUND_CLASS[w[i]] || SOUND_CLASS[w[i]] !== SOUND_CLASS[code[i]]) ok = false;
+    }
+    if (ok && diff === 1) return code;
+  }
+  return null;
+}
+
+// User-taught corrections from Settings: [["up icd", "ruby icd"], ...]
+let CORRECTIONS = [];
+export function setCorrections(list) {
+  CORRECTIONS = (list || []).filter(([a, b]) => a && b).map(([a, b]) => [
+    new RegExp(`(^|[^\\p{L}\\p{N}])${a.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}(?=$|[^\\p{L}\\p{N}])`, 'giu'),
+    b.trim(),
+  ]);
+}
+export function applyCorrections(text) {
+  let s = String(text || '');
+  for (const [re, to] of CORRECTIONS) s = s.replace(re, (m, pre) => pre + to);
+  return s;
+}
+
+/**
+ * Tidy a displayed transcript line: user corrections, misheard brands and
+ * codes ("UP ICD" -> "Ruby ICD"). Keeps everything else as heard.
+ */
+export function fixMisheard(text) {
+  return applyCorrections(text).split('\n').map((line) => {
+    const words = line.split(/(\s+)/);
+    const idx = words.map((w, i) => i).filter((i) => words[i].trim());
+    const clean = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (let k = 0; k < idx.length; k++) {
+      const i = idx[k];
+      const w = clean(words[i]);
+      // next word, joining spelled letters ("I C D")
+      let nx = '';
+      for (let j = k + 1; j < idx.length; j++) {
+        const c = clean(words[idx[j]]);
+        if (c.length === 1 && /[a-z]/.test(c)) { nx += c; continue; }
+        if (!nx) nx = c;
+        break;
+      }
+      const nxFixed = misheardCode(nx) || nx;
+      const b = misheardBrand(w, nxFixed);
+      if (b) { words[i] = words[i].replace(/[A-Za-z0-9]+/, BRAND_NAMES[b]); continue; }
+      const code = misheardCode(w);
+      const prev = k > 0 ? clean(words[idx[k - 1]]) : '';
+      const prevBrand = BRANDS.includes(SYNONYMS[prev] || prev) || MISHEARD[prev];
+      if (code && (prevBrand || /^\d/.test(nx))) words[i] = words[i].replace(/[A-Za-z]+/, code.toUpperCase());
+    }
+    return words.join('');
+  }).join('\n');
+}
+
 // Produce the token stream: {w: word} or {n: number}
 export function tokenize(text) {
   let raw = preNormalise(text).split(/\s+/).filter(Boolean);
@@ -320,7 +465,11 @@ export function tokenize(text) {
     }
     let w = SYNONYMS[t] || t;
     if (!INDEX.vocab.has(w) && !CONNECTORS.has(w) && !RANGE_WORDS.has(w) && !EACH_WORDS.has(w)) {
-      const f = fuzzyVocab(w);
+      const nxRaw = raw[i + 1] || '';
+      const nx = misheardCode(nxRaw) || SYNONYMS[nxRaw] || nxRaw;
+      const brand = misheardBrand(t, nx);
+      const code = !brand && misheardCode(w);
+      const f = brand || code || fuzzyVocab(w);
       if (f) w = f;
     }
     out.push({ w });
@@ -423,7 +572,11 @@ function scoreProducts(words) {
     let extra = 0;
     for (const r of R) if (!e.kw.has(r)) extra += INDEX.idf(r);
     let alias = 0;
-    for (const a of e.aliases) if (a.every((t) => R.has(t))) alias = Math.max(alias, a.length * 1.5);
+    for (const a of e.aliases) {
+      if (!a.every((t) => R.has(t))) continue;
+      // exact alias ("icd" alone = Ruby ICD, the house default) wins outright
+      alias = Math.max(alias, a.length === R.size ? 6 : a.length * 1.5);
+    }
     const score = matched + alias - 0.12 * unmatched - 0.6 * extra;
     scored.push({ product: e.product, score, matched });
   }
@@ -488,8 +641,10 @@ function expandRange(a, b, cols) {
 
 export function readQuantities(tokens, cols) {
   const warnings = [];
-  const colSet = new Set(cols);
-  // 1. classify
+  // 1. classify - any real size (30..130, 73) is a size, even if this
+  // product's price list doesn't carry it (a misheard product must not turn
+  // "90 mein 3" into quantities).
+  const colSet = { has: (n) => isSizeValue(n) || cols.includes(n) };
   const items = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];

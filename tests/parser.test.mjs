@@ -218,3 +218,47 @@ test('Hindi shown in English letters parses the same as the Devanagari', async (
   assert.deepEqual(b.header, { name: 'Manoj Textiles', place: 'Sibsagar' });
   assert.deepEqual(byDesc(b)['marcos-cbrief'].qty, { 105: 2, 110: 4 });
 });
+
+// ---------------------------------------------------------------------------
+// Brand names the phone mishears
+// ---------------------------------------------------------------------------
+import { fixMisheard, setCorrections } from '../js/parser.js';
+
+test('misheard brands before a product word are repaired (UP ICD = Ruby ICD)', () => {
+  const cases = [
+    ['यूपी आईसीडी पचासी में दो नब्बे में तीन', 'ruby-icd', { 85: 2, 90: 3 }],
+    ['UP ICD 85 mein do', 'ruby-icd', { 85: 2 }],
+    ['रुपए आईसीडी पचासी दो', 'ruby-icd', { 85: 2 }],
+    ['रवि आईसीडी पचासी दो', 'ruby-icd', { 85: 2 }],
+    ['Ravi white drawer 85 2', 'ruby-iwd', { 85: 2 }],
+    ['रूबी आईसीटी पचासी दो', 'ruby-icd', { 85: 2 }],
+    ['लेट आईसीडी पचासी दो', 'lite-icd', { 85: 2 }],
+    ['Late long trunk O E 85 5', 'lite-oelt', { 85: 5 }],
+    ['मार्क्स कलर ब्रीफ पचासी दो', 'marcos-cbrief', { 85: 2 }],
+    ['Gents brief 85 2', 'genteez-brief', { 85: 2 }],
+    ['आईसीडी पचासी दो नब्बे तीन', 'ruby-icd', { 85: 2, 90: 3 }],   // bare ICD = Ruby ICD, not kids
+  ];
+  for (const [text, id, qty] of cases) {
+    const r = parseTranscript(text);
+    assert.equal(r.lines.length, 1, text);
+    assert.equal(r.lines[0].productId, id, text);
+    assert.deepEqual(r.lines[0].qty, qty, text);
+  }
+  // but ordinary talk is left alone
+  assert.equal(parseTranscript('ravi bhai kaise ho, 85 2').lines.length, 0);
+  assert.equal(fixMisheard('Up to 100 ruby'), 'Up to 100 ruby');
+});
+
+test('transcript display shows the corrected brand', () => {
+  assert.equal(fixMisheard('UP ICD 85 mein do'), 'Ruby ICD 85 mein do');
+  assert.equal(fixMisheard('Ravi I C D 85 mein 2'), 'Ruby I C D 85 mein 2');
+  assert.equal(fixMisheard('Ruby ICT 85 do'), 'Ruby ICD 85 do');
+});
+
+test('user corrections from Settings apply to text and order', () => {
+  setCorrections([['tension', 'natkhat'], ['double', 'ruby']]);
+  const r = parseTranscript('tension print vest 60 4. double IWD 85 2');
+  assert.deepEqual(r.lines.map((l) => l.productId), ['natkhat-rn', 'ruby-iwd']);
+  assert.equal(fixMisheard('Tension print vest'), 'natkhat print vest');
+  setCorrections([]);
+});

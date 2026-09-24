@@ -77,6 +77,7 @@
       <div class="btn-row">
         <button class="btn primary" id="btn-parse">Build order from talk</button>
         <button class="btn" id="btn-ai" title="Uses Claude (needs API key in Settings)">✨ Build with AI</button>
+        <button class="btn ghost" id="btn-copy-talk">Copy text</button>
         <button class="btn ghost" id="btn-clear-talk">Clear talk</button>
       </div>
       <div id="parse-notes" class="notes" hidden></div>
@@ -118,6 +119,9 @@
         <input id="s-key" type="password" autocomplete="off" placeholder="sk-ant-…">
       </label>
       <label>Claude model<input id="s-model" autocomplete="off"></label>
+      <label>Words the phone hears wrong <span class="hint">one per line: <code>heard = correct</code>. Fixed in the text and the order.</span>
+        <textarea id="s-fixes" rows="4" placeholder="up icd = ruby icd&#10;tension = natkhat"></textarea>
+      </label>
       <label>My own styles not in the price list <span class="hint">one per line: <code>CODE | shape | rate per box</code></span>
         <textarea id="s-custom" rows="6" placeholder="JFS 2409 | Net | 640&#10;AHW 613 | WSP (-15%) | 900"></textarea>
       </label>

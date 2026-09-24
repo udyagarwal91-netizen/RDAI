@@ -74,7 +74,7 @@ const RAW = [
   // ---------------- GROUP A : BRIEFS & TRUNKS ----------------
   ['ruby-icd', 'RUBY INT COLOR DRAWER ICD', 'Ruby ICD', 'O/E', 'adult',
     { '75': 840, '80-85-90': 880, '95-100': 980, '105-110': 1080, '115-120': 1180, '125-130': 1280 }, 160,
-    ['ruby icd', 'ruby color drawer', 'ruby interlock color drawer']],
+    ['ruby icd', 'icd', 'ruby color drawer', 'ruby interlock color drawer']],
   ['ruby-iwd', 'INT WHITE DRAWER IWD', 'Ruby IWD', 'O/E', 'adult',
     { '80-85-90': 860, '95-100': 960, '105-110': 1060, '115-120': 1160, '125-130': 1260 }, 150,
     ['ruby iwd', 'iwd', 'white drawer', 'ruby white drawer']],
@@ -84,7 +84,7 @@ const RAW = [
   ['ruby-rcd', 'RUBY RIB DRAWER RCD', 'Ruby RCD', 'O/E', 'adult',
     { '80-85-90': 900, '95-100': 1000 }, 160, ['rcd', 'ruby rib', 'rib drawer']],
   ['ezee-cd', 'EZEE COLOR / WHITE DRAWER CD', 'Ezee CD', 'O/E', 'adult',
-    { '75': 730, '80-85-90': 770, '95-100': 850, '105-110': 930 }, 150, ['ezee drawer', 'ezee cd']],
+    { '75': 730, '80-85-90': 770, '95-100': 850, '105-110': 930 }, 150, ['ezee drawer', 'ezee cd', 'cd']],
   ['ezee-cbrief', 'EZEE COLOUR BRIEF', 'Ezee Col Brief', 'O/E', 'adult',
     { '75': 610, '80-85-90': 650, '95-100': 700 }, 120, ['ezee brief', 'ezee color brief']],
   ['ezee-jokee', 'EZEE FRONT OPEN JOKEE COL/WHITE', 'Ezee FO Jokee', 'O/E', 'adult',
