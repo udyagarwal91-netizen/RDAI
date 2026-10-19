@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block body %}
+{% set titles = {
+  "anthropic": ("Claude", "Writes captions, hooks and the weekly plan."),
+  "gemini": ("Gemini", "Makes AI images and Veo reels, and checks image quality."),
+  "shopify": ("Shopify", "Reads your products, prices, sizes and stock. Read-only."),
+  "meta": ("Instagram + Facebook", "Publishes approved posts and reads post performance."),
+  "telegram": ("Telegram", "Sends you each draft with Approve / Regenerate / Edit / Reject buttons."),
+} %}
+<header>
+  <h1>Agent Settings</h1>
+  <div style="display:flex; gap:8px; align-items:center;">
+    {% if brands|length > 1 %}
+    <form method="post" action="{{ url_for('switch_brand') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <select name="brand" onchange="this.form.submit()">
+        {% for b in brands %}<option value="{{ b }}" {% if b == brand %}selected{% endif %}>{{ b }}</option>{% endfor %}
+      </select>
+    </form>
+    {% else %}<span class="muted">Brand: <b>{{ brand or "none" }}</b></span>{% endif %}
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="secondary" type="submit">Log out</button>
+    </form>
+  </div>
+</header>
+
+<p class="muted">Paste each key and press <b>Save</b>, then <b>Test</b>. Keys are saved privately on this
+  computer and are never shown in full again. Step-by-step help: <code>docs/SETUP_GUIDE.md</code>.</p>
+
+{% if on_host %}
+<div class="flash error">You're on a hosting service. Keys saved here may be lost when the app restarts.
+  Paste them in the host's <b>Variables / Environment</b> screen instead (see docs/DEPLOY.md).</div>
+{% endif %}
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+{% for group, rows in groups.items() %}
+<section class="card" id="{{ group }}">
+  <div class="row-head">
+    <div><h2>{{ titles.get(group, (group, ""))[0] }}</h2>
+      <div class="muted">{{ titles.get(group, ("", ""))[1] }}</div></div>
+    {% if group != "other" %}
+    <button class="secondary" type="button" onclick="runTest('{{ group }}', this)">Test</button>
+    {% endif %}
+  </div>
+  {% for r in rows %}
+  <div class="row">
+    <div class="row-head">
+      <div><b>{{ r.spec.label }}</b>{% if r.spec.optional %} <span class="muted">(optional)</span>{% endif %}</div>
+      <div><span class="value">{{ r.display }}</span>
+        <span class="pill {{ 'set' if r.is_set else 'unset' }}">{{ 'saved' if r.is_set else 'missing' }}</span></div>
+    </div>
+    <div class="muted">{{ r.spec.where }} — <a href="{{ r.spec.link }}" target="_blank" rel="noopener">open page ↗</a></div>
+    <form method="post" action="{{ url_for('save_key') }}" class="inline" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="name" value="{{ r.spec.name }}">
+      <input type="{{ 'password' if r.spec.secret else 'text' }}" name="value"
+             placeholder="{{ 'Paste new value to replace' if r.is_set else 'Paste here' }}" autocomplete="off">
+      <button type="submit" name="action" value="save">Save</button>
+      {% if r.is_set %}<button class="link" type="submit" name="action" value="clear"
+          onclick="return confirm('Remove this key?')">remove</button>{% endif %}
+    </form>
+  </div>
+  {% endfor %}
+  <div class="result" id="result-{{ group }}"></div>
+</section>
+{% endfor %}
+
+<script>
+async function runTest(group, btn) {
+  const box = document.getElementById("result-" + group);
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Testing…";
+  box.className = "result"; box.textContent = "";
+  try {
+    const body = new URLSearchParams({ test: group, csrf: "{{ csrf_token() }}" });
+    const res = await fetch("{{ url_for('test_key') }}", { method: "POST", body });
+    const data = await res.json();
+    box.className = "result " + (data.ok ? "ok" : "err");
+    box.textContent = (data.ok ? "✅ " : "❌ ") + data.message;
+    if (data.ok && group === "telegram") setTimeout(() => location.reload(), 2500);
+  } catch (e) {
+    box.className = "result err"; box.textContent = "❌ Couldn't run the test. Is the app still running?";
+  }
+  btn.disabled = false; btn.textContent = label;
+}
+</script>
+{% endblock %}

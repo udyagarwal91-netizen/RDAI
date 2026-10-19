@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% block title %}Agent Settings{% endblock %}</title>
+<style>
+  :root { --bg:#f6f5f1; --card:#fff; --ink:#1b1f24; --muted:#66707a; --line:#e3e1db;
+          --brand:#0B2545; --ok:#1e7a46; --okbg:#e6f4ec; --err:#a62b1f; --errbg:#fbeae7; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --card:#1d2125; --ink:#ecebe7; --muted:#9aa3ab; --line:#30353a;
+            --brand:#8fb3e8; --ok:#6fd39a; --okbg:#173326; --err:#ff8f80; --errbg:#3a1d19; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  h1 { font-size: 22px; margin: 0; color: var(--brand); }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-top:16px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .row { border-top:1px solid var(--line); padding:14px 0; }
+  .row:first-of-type { border-top:0; }
+  .row-head { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:baseline; }
+  .value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:99px; }
+  .set { background:var(--okbg); color:var(--ok); } .unset { background:var(--errbg); color:var(--err); }
+  form.inline { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  input[type=password], input[type=text] { flex:1; min-width:200px; padding:9px 10px; border:1px solid var(--line);
+         border-radius:8px; background:var(--bg); color:var(--ink); font-size:14px; }
+  button, select { padding:9px 14px; border-radius:8px; border:1px solid var(--brand); background:var(--brand);
+         color:#fff; font-size:14px; cursor:pointer; }
+  button.secondary, select { background:transparent; color:var(--brand); }
+  button.link { border:0; background:none; color:var(--muted); padding:0; text-decoration:underline; font-size:13px; }
+  .result { margin-top:10px; padding:10px 12px; border-radius:8px; display:none; }
+  .result.ok { display:block; background:var(--okbg); color:var(--ok); }
+  .result.err { display:block; background:var(--errbg); color:var(--err); }
+  .flash { padding:10px 12px; border-radius:8px; margin-top:12px; }
+  .flash.ok { background:var(--okbg); color:var(--ok); } .flash.error { background:var(--errbg); color:var(--err); }
+  a { color: var(--brand); }
+  .narrow { max-width: 420px; margin: 60px auto; }
+  label { display:block; margin-top:12px; font-size:14px; }
+  .stack input { width:100%; margin-top:4px; }
+</style>
+</head>
+<body>
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+  {% block body %}{% endblock %}
+</main>
+</body>
+</html>

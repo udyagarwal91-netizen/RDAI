@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Log in{% endblock %}
+{% block body %}
+<div class="card narrow">
+  <h1>Agent Settings</h1>
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required autofocus></label>
+    <p><button type="submit">Log in</button></p>
+  </form>
+  <p class="muted">Forgot it? Open the <code>.env</code> file, delete everything after
+     <code>SETTINGS_PASSWORD_HASH=</code>, save, restart the app, and create a new one.</p>
+</div>
+{% endblock %}

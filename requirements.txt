@@ -1,0 +1,8 @@
+# Keep this list short. Each line is one library the agent needs.
+flask==3.1.3          # the small website for the Settings page
+requests==2.34.2      # talks to Shopify, Meta, Telegram, Claude and Gemini over the internet
+python-dotenv==1.2.4  # reads your keys from the .env file
+PyYAML==6.0.3         # reads brands/<brand>/config.yaml
+
+# Only needed for running the automated checks (tests)
+pytest==9.1.1

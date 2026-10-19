@@ -1,0 +1,122 @@
+# =====================================================================
+#  SKIPPER PACKS — BRAND SETTINGS
+#  Lines starting with # are notes for you; the agent ignores them.
+#  Anything marked  # ← FILL IN  needs your real details.
+#  Keep the indentation (spaces at the start of lines) exactly as is.
+# =====================================================================
+
+brand:
+  name: Skipper Packs
+  website: https://skipperpacks.com
+  tagline: "Daily essentials, packed right."         # ← FILL IN (or keep)
+
+# For client brands only. Leave empty for Skipper Packs.
+# A client brand sets e.g. "ACME_" and its keys become ACME_META_ACCESS_TOKEN etc.
+env_prefix: ""
+
+# Nothing posts without your ✅ on Telegram while this is false.
+auto_publish: false
+
+shopify:
+  # Your store's .myshopify.com address — NOT skipperpacks.com.
+  # Find it: Shopify admin → Settings → Domains.
+  store_domain: your-store.myshopify.com              # ← FILL IN
+  api_version: "2026-10"
+
+meta:
+  graph_api_version: v26.0
+  facebook_page_id: ""          # ← FILL IN (docs/SETUP_GUIDE.md section 5d shows where)
+  instagram_account_id: ""      # ← FILL IN (the Meta Test button tells you this number)
+
+schedule:
+  timezone: Asia/Kolkata
+  posts_per_week: 5
+  # Days and times (24-hour clock, IST) the agent may schedule posts.
+  slots:
+    - { day: mon, time: "19:30" }
+    - { day: wed, time: "19:30" }
+    - { day: thu, time: "13:00" }
+    - { day: sat, time: "11:00" }
+    - { day: sun, time: "19:00" }
+  plan_horizon_days: 7          # 7 to 14
+  plan_day: sun                 # when the weekly plan is made
+  plan_time: "10:00"
+
+content_mix:
+  # What the posts are ABOUT. Must add up to 100.
+  themes:
+    product: 50       # a specific pack: what it is, price, sizes
+    offer: 10         # ONLY real Shopify prices/compare-at prices. Never invented.
+    education: 20     # fabric, fit, care, how often to replace innerwear
+    lifestyle: 20     # everyday routines, gym, office, travel
+  # How the posts LOOK. Must add up to 100.
+  formats:
+    template_image: 35   # brand template + real product photo
+    carousel: 25         # 3–5 slides from brand templates
+    gemini_image: 25     # AI lifestyle/flat-lay using the real product photo as reference
+    gemini_reel: 15      # AI vertical video (Veo) + text added by code
+  max_reels_per_week: 4  # hard cap — Veo is slow and costs the most
+
+style:
+  colors:                      # ← FILL IN with your exact brand hex codes
+    primary: "#0B2545"         # deep navy
+    secondary: "#F4F1EA"       # warm off-white
+    accent: "#E4572E"          # price/CTA highlight
+    text_dark: "#111111"
+    text_light: "#FFFFFF"
+  fonts:                       # Google Fonts names, or put .ttf files in brands/skipperpacks/assets/fonts/
+    heading: "Montserrat"
+    body: "Inter"
+  logo_path: assets/logo.png   # ← put your logo here (transparent PNG works best)
+  logo_on_dark_path: assets/logo-white.png   # optional white version
+  # Most Shopify photos are on white. Templates place them on a soft card
+  # of this colour so the white edges don't look like a mistake.
+  product_photo_backdrop: "#FFFFFF"
+
+voice:
+  language: "English with light Hinglish"   # e.g. a Hinglish hook now and then; body in English
+  hinglish_share_percent: 25                # roughly 1 in 4 captions may use a Hinglish hook
+  tone: >
+    Premium everyday essentials. Confident, practical, warm, a little witty.
+    Talks about comfort, fit, durability and value-for-money of packs.
+    Never suggestive, never body-shaming, never sexualised.
+  caption_length: "60–150 words for feed posts; 1–2 lines for reels"
+  emoji_level: low                          # none / low / medium
+  call_to_action: "Shop the pack at skipperpacks.com (link in bio)"
+
+hashtags:
+  always: ["#SkipperPacks", "#DailyEssentials"]
+  sets:
+    product: ["#Innerwear", "#MensInnerwear", "#ValuePack", "#CottonComfort", "#MadeInIndia"]
+    education: ["#FabricCare", "#EverydayComfort", "#WardrobeEssentials"]
+    lifestyle: ["#EverydayStyle", "#GymLife", "#OfficeReady", "#TravelEssentials"]
+    festive: ["#FestiveSale", "#DiwaliShopping"]
+  max_per_post: 12
+
+# Words/phrases that must never appear in captions or on images.
+banned_words:
+  - sexy
+  - hot
+  - seductive
+  - naughty
+  - bedroom
+  - cheapest
+  - "100% guaranteed"
+# Words that are allowed only when Shopify data backs them up (agent flags them for you).
+needs_proof_words:
+  - free
+  - sale
+  - off
+  - limited
+
+quality_check:
+  regenerate_once_if_flagged: true
+  check_price_and_pack_size: true    # caption numbers must match Shopify exactly
+  check_content_safety: true
+
+festivals:
+  # Indian festivals and sale days to plan around. The planner also adds
+  # well-known dates on its own; list your own sale days here.
+  custom_dates: []
+  # example:
+  # - { date: "2026-11-08", name: "Diwali", note: "festive creatives only, no fake discounts" }
