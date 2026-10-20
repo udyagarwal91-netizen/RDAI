@@ -5,7 +5,19 @@ Instagram + Facebook posts, makes the images/reels, sends each draft to you on
 Telegram for ✅ approval, posts the approved ones on time, and learns from
 what performed well.
 
-**Status:** Phase 0 (setup) is built. You can run it and connect your keys.
+**Status:** Phase 0 (setup) is built, with the **Control Center** app. Run it,
+connect your accounts and set up your brand — all with buttons, no files to edit.
+
+## The Control Center
+
+Double-click the start file and it opens in your browser:
+
+| Page | What you do there |
+|------|-------------------|
+| **Home** | See what's done, the one next step, and the action buttons (they switch on as each phase is built) |
+| **Connect accounts** | Step-by-step help for Telegram, Claude, Gemini, Shopify, Instagram/Facebook — paste, press **Save & test** |
+| **Brand** | Store address, posting days/times, content mix, colours, logo upload, voice, hashtags, banned words, approval mode, brand rules |
+| **Activity** | What the agent did each day, newest first |
 
 ---
 
@@ -23,7 +35,7 @@ with buttons. Approved posts go into a **queue**; at the scheduled time the
 **publisher** posts them to Instagram and Facebook through Meta. Every week the
 **learner** collects reach/saves/shares from Meta and feeds a summary into the
 next week's plan. All brand-specific settings live in `brands/<brand>/`, all
-keys in `.env` (edited through the **Settings page**), and every action is
+keys in `.env` (edited in the **Control Center**), and every action is
 written to a daily log file in `logs/`.
 
 ```
@@ -53,12 +65,14 @@ RDAI/
 │       └── assets/         ← logo.png, fonts
 ├── app/
 │   ├── secrets_store.py    ← reads/saves keys; masks them
-│   ├── keys.py             ← the list of keys on the Settings page
-│   ├── key_tests.py        ← the "Test" buttons
+│   ├── keys.py             ← the keys + step-by-step help shown in the app
+│   ├── key_tests.py        ← the "Save & test" checks
 │   ├── brands.py           ← loads brand folders
 │   ├── db.py               ← database tables
 │   ├── logging_setup.py    ← daily log files, keys scrubbed
-│   └── web/                ← the Settings page
+│   ├── brand_editor.py     ← saves Brand-page changes into config.yaml safely
+│   ├── status.py           ← remembers which connections passed
+│   └── web/                ← the Control Center (pages + forms)
 │   (coming: shopify/, planner/, producer/, checker/, telegram_bot/, publisher/, learner/)
 ├── docs/
 │   ├── SETUP_GUIDE.md      ← how to get each key, click by click
@@ -94,7 +108,7 @@ Unzip it somewhere easy, like your Desktop.
 
 The first start takes 2–3 minutes. Your browser then opens
 **http://localhost:8000**. Create a password, then follow
-[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) to connect your keys.
+the **Next step** button on the Home page — it walks you through everything.
 
 **To stop:** close the black window (or press Ctrl+C in it).
 **To see what happened on a day:** open `logs/2026-10-20.log` (any date) in
@@ -109,7 +123,7 @@ Notepad/TextEdit.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python run.py          # Settings page on http://localhost:8000
+.venv/bin/python run.py          # Control Center on http://localhost:8000
 .venv/bin/python -m pytest -q    # all tests
 .venv/bin/python -m pytest -q tests/test_phase0.py::test_mask   # one test
 ```

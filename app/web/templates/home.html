@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block body %}
+<h1>{{ brand.name if brand else "Social Agent" }}</h1>
+<p class="muted">Your control center. Everything the agent needs is set up from here — no files to edit.</p>
+
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+{# ---- What to do next ---- #}
+<section class="card">
+  <h2>Next step</h2>
+  {% if next_service %}
+    <p>Connect <b>{{ next_service.title }}</b> — {{ next_service.purpose|lower }}
+       <span class="muted">(about {{ next_service.minutes }} min)</span></p>
+    <a class="btn" href="{{ url_for('connect') }}#{{ next_service.id }}">Connect {{ next_service.title }} →</a>
+  {% elif brand_todo %}
+    <p>{{ brand_todo[0][0] }}.</p>
+    <a class="btn" href="{{ url_for('brand_page') }}#{{ brand_todo[0][1] }}">Open Brand settings →</a>
+  {% else %}
+    <p>🎉 Setup is complete. The content buttons below switch on as each next part of the agent is built.</p>
+  {% endif %}
+</section>
+
+{# ---- Setup checklist ---- #}
+<section class="card">
+  <div class="row-head">
+    <h2>Setup</h2>
+    <span class="muted">{{ connected|length }} of {{ services|length }} accounts connected</span>
+  </div>
+  <div class="progress"><div style="width: {{ (100 * connected|length / services|length)|round|int }}%"></div></div>
+  <div style="margin-top:10px">
+    {% for s in services %}{% set r = results.get(s.id) %}
+    <div class="check">
+      <span class="mark">{{ "✅" if r and r.ok else ("❌" if r else "⬜") }}</span>
+      <div class="grow"><b>{{ s.title }}</b>
+        <div class="muted">{% if r %}{{ r.message }} <i>({{ r.at }})</i>{% else %}Not connected yet.{% endif %}</div></div>
+      <a href="{{ url_for('connect') }}#{{ s.id }}">{{ "Change" if r and r.ok else "Connect" }}</a>
+    </div>
+    {% endfor %}
+    {% for what, section in brand_todo %}
+    <div class="check">
+      <span class="mark">⬜</span><div class="grow"><b>{{ what }}</b></div>
+      <a href="{{ url_for('brand_page') }}#{{ section }}">Fix</a>
+    </div>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('check_all') }}" class="actions">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button type="submit" class="secondary" data-busy="Checking all… (up to a minute)">Check all connections</button>
+    <span class="muted">Safe to press any time — nothing is posted.</span>
+  </form>
+</section>
+
+{# ---- Approval mode ---- #}
+{% if brand %}
+<section class="card">
+  <div class="row-head">
+    <div><h2>Approval mode</h2>
+      <div class="muted">{% if brand.auto_publish %}⚠️ Posts go out automatically without asking you.
+        {% else %}🔒 Nothing is posted until you press ✅ Approve on Telegram.{% endif %}</div></div>
+    <a href="{{ url_for('brand_page') }}#approval">Change</a>
+  </div>
+</section>
+{% endif %}
+
+{# ---- Actions ---- #}
+<section class="card">
+  <h2>What the agent can do</h2>
+  <p class="muted">These buttons switch on as each part of the agent is built. Greyed-out ones are coming soon.</p>
+  <div class="grid">
+    {% for key, title, desc, phase in actions %}
+    <div class="tile">
+      <div class="row-head"><b>{{ title }}</b>
+        {% if phase > current_phase %}<span class="pill soon">coming in phase {{ phase }}</span>{% endif %}</div>
+      <div class="muted">{{ desc }}</div>
+      <form><button type="button" {% if phase > current_phase %}disabled{% endif %}>{{ title }}</button></form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

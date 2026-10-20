@@ -1,4 +1,4 @@
-"""The "Test" buttons on the Settings page.
+"""The "Save & test" checks in the Control Center.
 
 Each test makes the smallest possible harmless request to the service
 (read-only — nothing is posted or changed) and returns (ok, message).
@@ -9,7 +9,7 @@ import logging
 
 import requests
 
-from app import secrets_store
+from app import brand_editor, secrets_store
 from app.brands import Brand
 
 log = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ def shopify_access_token(brand: Brand) -> tuple[str | None, str]:
 def test_shopify(brand: Brand) -> tuple[bool, str]:
     domain = brand.config["shopify"]["store_domain"]
     if not domain or "your-store" in domain:
-        return False, "First fill in shopify → store_domain in brands/<brand>/config.yaml (the .myshopify.com address)."
+        return False, "Fill in the Store address box first (copy it from your Shopify admin's browser bar)."
     token, problem = shopify_access_token(brand)
     if not token:
         return False, problem
@@ -141,21 +141,37 @@ def test_meta(brand: Brand) -> tuple[bool, str]:
 
     page_id = str(brand.config["meta"].get("facebook_page_id") or "")
     if not page_id:
-        return True, (f"Token works (belongs to '{who}'). Next: fill in facebook_page_id and "
-                      "instagram_account_id in config.yaml, then Test again.")
+        # Find the Page ourselves from the Pages this token can manage.
+        r = requests.get(f"{base}/me/accounts", params={
+            "fields": "id,name,instagram_business_account", "limit": 100, "access_token": token}, timeout=TIMEOUT)
+        pages = r.json().get("data", []) if r.status_code == 200 else []
+        if not pages:
+            return False, (f"Token works (belongs to '{who}') but it can't see any Facebook Page. In Business "
+                           "Settings → System users → Assign assets, give it your Page with Full control, then "
+                           "generate a new token.")
+        matches = [p for p in pages if brand.name.lower().replace(" ", "") in p["name"].lower().replace(" ", "")]
+        if len(pages) == 1 or len(matches) == 1:
+            page_id = (pages[0] if len(pages) == 1 else matches[0])["id"]
+            brand_editor.update_config(brand.slug, {"meta.facebook_page_id": page_id})
+        else:
+            names = ", ".join(f"{p['name']} ({p['id']})" for p in pages)
+            return False, (f"Token works and can see several Pages: {names}. Go to Brand → Accounts and type "
+                           "the number of the right Page, then test again.")
+
     r = requests.get(f"{base}/{page_id}", params={"fields": "name,instagram_business_account",
                                                    "access_token": token}, timeout=TIMEOUT)
     if r.status_code != 200:
-        return False, f"Token works, but can't open Facebook Page {page_id}. Was the Page assigned to the system user?"
+        return False, (f"Token works, but can't open Facebook Page {page_id}. Was the Page assigned to the "
+                       "system user (Business Settings → System users → Assign assets)?")
     page = r.json()
     ig = (page.get("instagram_business_account") or {}).get("id")
     if not ig:
-        return False, f"Page '{page.get('name')}' has no Instagram Business account linked."
-    configured_ig = str(brand.config["meta"].get("instagram_account_id") or "")
-    if configured_ig and configured_ig != ig:
-        return False, f"config.yaml says instagram_account_id {configured_ig}, but the Page is linked to {ig}. Use {ig}."
-    note = "" if configured_ig else f" Put instagram_account_id: \"{ig}\" in config.yaml."
-    return True, f"Connected to Facebook Page '{page.get('name')}' and its Instagram account ({ig}).{note}"
+        return False, (f"Page '{page.get('name')}' has no Instagram Business account linked. In the Instagram "
+                       "app: Settings → Account type and tools → make sure it's a Professional account and "
+                       "connected to this Page.")
+    if str(brand.config["meta"].get("instagram_account_id") or "") != ig:
+        brand_editor.update_config(brand.slug, {"meta.instagram_account_id": ig})
+    return True, f"Connected to Facebook Page '{page.get('name')}' and its Instagram account. Saved both for you."
 
 
 def test_telegram(brand: Brand) -> tuple[bool, str]:

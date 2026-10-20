@@ -25,8 +25,8 @@ your `.env` file:
 | `SHOPIFY_CLIENT_SECRET` | from Shopify Dev Dashboard |
 | `META_ACCESS_TOKEN` | your Meta system user token |
 | `TELEGRAM_BOT_TOKEN` | from BotFather |
-| `TELEGRAM_CHAT_ID` | your chat ID (shown on your laptop's Settings page) |
-| `SETTINGS_PASSWORD` | a password for the online Settings page |
+| `TELEGRAM_CHAT_ID` | your chat ID (found automatically on your laptop; copy it from your .env file) |
+| `SETTINGS_PASSWORD` | a password for the online Control Center |
 | `FLASK_SECRET_KEY` | any long random text (e.g. mash the keyboard for 40 characters) |
 | `DATA_DIR` | `/data` |
 | `LOGS_DIR` | `/data/logs` |
@@ -37,7 +37,7 @@ Tip: Railway's **Raw Editor** button lets you paste your whole local `.env`
 in one go — then add the last five rows above.
 
 Click **Deploy**. Under **Settings → Networking → Generate Domain** you get
-a web address for the Settings page.
+a web address for the Control Center.
 
 ## Render (alternative)
 Same idea: **New → Web Service** → connect the repo → Start command

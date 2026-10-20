@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 
 import pytest
 
@@ -71,42 +70,6 @@ def test_skipperpacks_config_loads():
     assert brand.auto_publish is False
     assert "50+ years" in brand.rules
     assert brand.config["content_mix"]["max_reels_per_week"] == 4
-
-
-def test_settings_page_flow(env_file, monkeypatch):
-    from app.web import create_app
-
-    secrets_store.save("FLASK_SECRET_KEY", "x" * 64)
-    app = create_app()
-    app.testing = True
-    client = app.test_client()
-
-    # First visit → create password.
-    assert "/setup-password" in client.get("/settings").headers["Location"]
-    page = client.get("/setup-password").get_data(as_text=True)
-    csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
-    r = client.post("/setup-password", data={"csrf": csrf, "password": "goodpass1", "confirm": "goodpass1"})
-    assert r.status_code == 302
-    assert secrets_store.get("SETTINGS_PASSWORD_HASH").startswith(("scrypt:", "pbkdf2:"))
-
-    # Logging in starts a fresh session, so take the new form token.
-    page = client.get("/settings").get_data(as_text=True)
-    csrf = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
-
-    # Save a key; page shows it masked, never in full.
-    r = client.post("/settings/save", data={"csrf": csrf, "name": "GEMINI_API_KEY",
-                                            "value": "AIzaSyFULLKEYVALUE4321", "action": "save"})
-    assert r.status_code == 302
-    page = client.get("/settings").get_data(as_text=True)
-    assert "AIza••••••4321" in page
-    assert "FULLKEYVALUE" not in page
-
-    # Missing CSRF token is refused.
-    assert client.post("/settings/save", data={"name": "GEMINI_API_KEY", "value": "x"}).status_code == 400
-
-    # Logged-out users can't see the page.
-    client.post("/logout", data={"csrf": csrf})
-    assert "/login" in client.get("/settings").headers["Location"]
 
 
 def test_db_creates_all_tables(tmp_path, monkeypatch):

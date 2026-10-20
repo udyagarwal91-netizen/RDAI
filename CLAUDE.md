@@ -18,7 +18,7 @@ on Telegram → 2 captions/images/carousels/Gemini images + QC + approval → 2b
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python run.py                     # Settings page at http://localhost:8000 (NO_BROWSER=1 to skip opening a browser)
+.venv/bin/python run.py                     # Control Center at http://localhost:8000 (NO_BROWSER=1 to skip opening a browser)
 .venv/bin/python -m pytest -q               # all tests
 .venv/bin/python -m pytest -q tests/test_phase0.py::test_mask   # single test
 ```
@@ -32,15 +32,22 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
 - `app/secrets_store.py` — the only code that reads/writes keys. `.env` is loaded with `override=False`, so host
   env vars (Railway/Render) win. `save()` rewrites one line atomically and updates `os.environ` live.
   `scrub()` masks any loaded secret in text; used by the log filter and test-button messages.
-- `app/keys.py` — registry of keys shown on the Settings page; `test` names map to functions in `app/key_tests.py`.
+- `app/keys.py` — registry of keys + per-service setup guides (SERVICES) shown in the Control Center; `test` names map to functions in `app/key_tests.py`.
 - `app/brands.py` — loads `brands/<slug>/config.yaml` + `brand-rules.md`. `Brand.secret(name)` applies the brand's
   `env_prefix` (client brands get `ACME_META_ACCESS_TOKEN` etc.); Claude/Gemini keys fall back to shared ones.
 - `app/db.py` — SQLite at `$DATA_DIR/agent.db`; every table has a `brand` column. Tables: products, content_plan,
   drafts, approvals, posts, insights, app_state.
 - `app/logging_setup.py` — one log file per day `logs/YYYY-MM-DD.log`, secrets scrubbed; urllib3 kept at WARNING
   because Telegram URLs contain the bot token.
-- `app/web/` — Flask Settings page: first-run password creation (hash stored in `.env`), login lockout, CSRF on all
-  POSTs, keys shown masked only.
+- `app/web/` — Flask "Control Center", the owner's only interface (goal: no file editing, ever). Pages: Home
+  (checklist from stored test results, next step, action tiles gated by `current_phase`), Connect (per-service
+  guide from `keys.SERVICES` + "Save & test"), Brand (forms parsed in `web/brand_forms.py`), Activity (log viewer).
+  First-run password (hash in `.env`), login lockout, CSRF on all POSTs, keys shown masked only.
+  When a phase ships, raise `current_phase` in `home()` and wire its ACTIONS tile to a real POST route.
+- `app/brand_editor.py` — the only writer of `config.yaml`: ruamel round-trip (keeps comments), quotes strings,
+  validates via `load_brand` and rolls back on failure. Also logo upload and Shopify-address normalisation.
+- `app/status.py` — last test result per service in `app_state` (`test:<service>`).
+- `key_tests.test_meta` auto-discovers the Page (via `/me/accounts`) and IG account and writes them to config.
 
 ## Conventions
 
@@ -50,4 +57,5 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
 - Look up current external API versions/model names from official docs when building a phase (pinned now:
   Shopify Admin API `2026-10`, Meta Graph `v26.0`). Shopify uses Dev Dashboard client-credentials tokens
   (24h expiry) — legacy `shpat_` tokens are also supported.
+- Every new owner-facing setting gets a Control Center form; never ask the owner to edit YAML/.env by hand.
 - Keep dependencies minimal; comment code for a non-coder reader.

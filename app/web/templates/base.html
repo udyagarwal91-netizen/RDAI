@@ -4,53 +4,135 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>{% block title %}Agent Settings{% endblock %}</title>
+<title>{% block title %}Control Center{% endblock %} · Social Agent</title>
 <style>
-  :root { --bg:#f6f5f1; --card:#fff; --ink:#1b1f24; --muted:#66707a; --line:#e3e1db;
-          --brand:#0B2545; --ok:#1e7a46; --okbg:#e6f4ec; --err:#a62b1f; --errbg:#fbeae7; }
+  :root { --bg:#f6f5f1; --card:#fff; --ink:#1b1f24; --muted:#66707a; --line:#e3e1db; --soft:#efede7;
+          --brand:#0B2545; --brand-ink:#fff; --ok:#1e7a46; --okbg:#e6f4ec; --err:#a62b1f; --errbg:#fbeae7;
+          --warn:#8a5a00; --warnbg:#fff4d6; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#14171a; --card:#1d2125; --ink:#ecebe7; --muted:#9aa3ab; --line:#30353a;
-            --brand:#8fb3e8; --ok:#6fd39a; --okbg:#173326; --err:#ff8f80; --errbg:#3a1d19; }
+    :root { --bg:#14171a; --card:#1d2125; --ink:#ecebe7; --muted:#9aa3ab; --line:#30353a; --soft:#252a2f;
+            --brand:#8fb3e8; --brand-ink:#0d1620; --ok:#6fd39a; --okbg:#173326; --err:#ff8f80; --errbg:#3a1d19;
+            --warn:#f2c46b; --warnbg:#3a2f14; }
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
-         font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
-  header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-  h1 { font-size: 22px; margin: 0; color: var(--brand); }
-  h2 { font-size: 17px; margin: 0 0 4px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; margin-top:16px; }
-  .muted { color: var(--muted); font-size: 13px; }
-  .row { border-top:1px solid var(--line); padding:14px 0; }
-  .row:first-of-type { border-top:0; }
-  .row-head { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:baseline; }
-  .value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
-  .pill { font-size:12px; padding:2px 8px; border-radius:99px; }
-  .set { background:var(--okbg); color:var(--ok); } .unset { background:var(--errbg); color:var(--err); }
-  form.inline { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
-  input[type=password], input[type=text] { flex:1; min-width:200px; padding:9px 10px; border:1px solid var(--line);
-         border-radius:8px; background:var(--bg); color:var(--ink); font-size:14px; }
-  button, select { padding:9px 14px; border-radius:8px; border:1px solid var(--brand); background:var(--brand);
-         color:#fff; font-size:14px; cursor:pointer; }
-  button.secondary, select { background:transparent; color:var(--brand); }
-  button.link { border:0; background:none; color:var(--muted); padding:0; text-decoration:underline; font-size:13px; }
-  .result { margin-top:10px; padding:10px 12px; border-radius:8px; display:none; }
-  .result.ok { display:block; background:var(--okbg); color:var(--ok); }
-  .result.err { display:block; background:var(--errbg); color:var(--err); }
-  .flash { padding:10px 12px; border-radius:8px; margin-top:12px; }
+         font:15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .top { background:var(--card); border-bottom:1px solid var(--line); }
+  .top-inner { max-width:960px; margin:0 auto; padding:10px 16px; display:flex; align-items:center;
+               gap:12px; flex-wrap:wrap; }
+  .logo { font-weight:700; color:var(--brand); margin-right:auto; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav a { padding:7px 12px; border-radius:8px; text-decoration:none; color:var(--muted); font-weight:500; }
+  nav a.on { background:var(--soft); color:var(--ink); }
+  main { max-width:960px; margin:0 auto; padding:20px 16px 72px; }
+  h1 { font-size:24px; margin:8px 0 4px; }
+  h2 { font-size:18px; margin:0 0 4px; }
+  h3 { font-size:15px; margin:16px 0 6px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-top:16px; }
+  .muted { color:var(--muted); font-size:13.5px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; margin-top:12px; }
+  .tile { border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--card);
+          display:flex; flex-direction:column; gap:6px; }
+  .tile form { margin-top:auto; }
+  .row-head { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; align-items:center; }
+  .pill { font-size:12px; padding:2px 9px; border-radius:99px; white-space:nowrap; }
+  .set, .pill.ok { background:var(--okbg); color:var(--ok); }
+  .unset, .pill.err { background:var(--errbg); color:var(--err); }
+  .pill.soon { background:var(--soft); color:var(--muted); }
+  input[type=password], input[type=text], input[type=number], input[type=time], select, textarea {
+         width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg);
+         color:var(--ink); font:inherit; font-size:14px; }
+  textarea { min-height:90px; resize:vertical; }
+  textarea.big { min-height:420px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size:13px; }
+  input[type=color] { width:52px; height:36px; border:1px solid var(--line); border-radius:8px; padding:2px;
+         background:var(--bg); }
+  label { display:block; margin-top:12px; font-size:14px; font-weight:500; }
+  label .muted { font-weight:400; }
+  label > input, label > select, label > textarea { margin-top:4px; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+  @media (max-width:640px) { .two { grid-template-columns:1fr; } }
+  button, .btn { display:inline-block; padding:10px 16px; border-radius:9px; border:1px solid var(--brand);
+         background:var(--brand); color:var(--brand-ink); font:inherit; font-size:14px; font-weight:600;
+         cursor:pointer; text-decoration:none; }
+  button.secondary, .btn.secondary { background:transparent; color:var(--brand); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.link { border:0; background:none; color:var(--muted); padding:0; text-decoration:underline;
+         font-size:13px; font-weight:400; }
+  .actions { margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .flash { padding:11px 14px; border-radius:10px; margin-top:12px; }
   .flash.ok { background:var(--okbg); color:var(--ok); } .flash.error { background:var(--errbg); color:var(--err); }
-  a { color: var(--brand); }
-  .narrow { max-width: 420px; margin: 60px auto; }
-  label { display:block; margin-top:12px; font-size:14px; }
-  .stack input { width:100%; margin-top:4px; }
+  .flash.warn { background:var(--warnbg); color:var(--warn); }
+  .result { margin-top:10px; padding:10px 12px; border-radius:8px; font-size:14px; }
+  .result.ok { background:var(--okbg); color:var(--ok); } .result.err { background:var(--errbg); color:var(--err); }
+  a { color:var(--brand); }
+  code { background:var(--soft); padding:1px 5px; border-radius:5px; font-size:13px; }
+  .narrow { max-width:420px; margin:60px auto; }
+  .progress { height:10px; border-radius:99px; background:var(--soft); overflow:hidden; margin-top:8px; }
+  .progress > div { height:100%; background:var(--ok); }
+  ol.steps { padding-left:20px; margin:8px 0; } ol.steps li { margin:6px 0; }
+  details summary { cursor:pointer; color:var(--brand); font-weight:600; margin-top:8px; }
+  .check { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+  .check:first-child { border-top:0; }
+  .check .mark { width:22px; text-align:center; }
+  .check .grow { flex:1; }
+  .day-row { display:grid; grid-template-columns:150px 140px; gap:12px; align-items:center; padding:4px 0; }
+  .day-row label { margin:0; display:flex; gap:8px; align-items:center; font-weight:500; }
+  .mix-row { display:grid; grid-template-columns:1fr 90px; gap:12px; align-items:center; padding:3px 0; }
+  .mix-row input { text-align:right; }
+  .total { font-weight:600; text-align:right; padding-top:6px; }
+  .total.bad { color:var(--err); }
+  .swatches { display:flex; flex-wrap:wrap; gap:14px; }
+  .swatches label { display:flex; flex-direction:column; gap:4px; align-items:flex-start; margin-top:4px; }
+  .logo-preview { max-height:80px; max-width:240px; border:1px dashed var(--line); border-radius:8px; padding:6px;
+                  background:repeating-conic-gradient(var(--soft) 0% 25%, transparent 0% 50%) 50%/16px 16px; }
+  .log { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; white-space:pre-wrap;
+         word-break:break-word; background:var(--soft); border-radius:10px; padding:12px; max-height:70vh;
+         overflow:auto; }
+  .log .warn { color:var(--warn); } .log .error { color:var(--err); }
+  .toc { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .toc a { font-size:13px; padding:5px 10px; border:1px solid var(--line); border-radius:99px; text-decoration:none; }
+  .switch { display:flex; gap:10px; align-items:center; font-weight:600; }
+  .switch input { width:20px; height:20px; }
 </style>
 </head>
 <body>
+{% if session.get("logged_in") %}
+<div class="top"><div class="top-inner">
+  <span class="logo">Social Agent</span>
+  <nav>
+    <a href="{{ url_for('home') }}" class="{{ 'on' if page == 'home' }}">Home</a>
+    <a href="{{ url_for('connect') }}" class="{{ 'on' if page == 'connect' }}">Connect accounts</a>
+    <a href="{{ url_for('brand_page') }}" class="{{ 'on' if page == 'brand_page' }}">Brand</a>
+    <a href="{{ url_for('activity') }}" class="{{ 'on' if page == 'activity' }}">Activity</a>
+  </nav>
+  {% if brands|length > 1 %}
+  <form method="post" action="{{ url_for('switch_brand') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <select name="brand" onchange="this.form.submit()" aria-label="Brand" style="width:auto">
+      {% for b in brands %}<option value="{{ b }}" {% if b == brand_slug %}selected{% endif %}>{{ b }}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+  <form method="post" action="{{ url_for('logout') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="link" type="submit">Log out</button>
+  </form>
+</div></div>
+{% endif %}
 <main>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in messages %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
   {% endwith %}
   {% block body %}{% endblock %}
 </main>
+<script>
+  // Show "Working…" on any button that submits a slow form, and stop double clicks.
+  document.addEventListener("submit", (e) => {
+    const btn = e.submitter;
+    if (btn && btn.dataset.busy) {
+      setTimeout(() => { btn.disabled = true; btn.textContent = btn.dataset.busy; }, 0);
+    }
+  });
+</script>
 </body>
 </html>

@@ -8,7 +8,7 @@ means copying the folder and editing its files.
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML, YAMLError
 
 from app import BRANDS_DIR, secrets_store
 
@@ -60,8 +60,8 @@ def load_brand(slug: str) -> Brand:
     if not config_path.exists():
         raise BrandConfigError(f"No brand called '{slug}'. Expected a file at {config_path}")
     try:
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as e:
+        config = YAML(typ="safe").load(config_path.read_text(encoding="utf-8")) or {}
+    except YAMLError as e:
         raise BrandConfigError(f"brands/{slug}/config.yaml has a typing mistake: {e}") from e
 
     missing = [s for s in REQUIRED_SECTIONS if s not in config]

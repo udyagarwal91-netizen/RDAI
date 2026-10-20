@@ -1,30 +1,52 @@
-"""The browser Settings page: log in, paste keys, press Test.
+"""The Control Center: the one place you run the agent from.
 
-Runs at http://localhost:8000 on your laptop. On Railway/Render it runs at
-your app's web address. The first visit asks you to create a password.
+Opens at http://localhost:8000 on your laptop (or your app's web address on
+Railway/Render). Pages:
+
+- Home     — what's done, what to do next, and the action buttons
+- Connect  — paste keys with step-by-step help; "Save & test" for each service
+- Brand    — store, accounts, posting times, mix, colours, logo, voice, rules
+- Activity — what the agent did each day (the log), in plain text
+
+The first visit asks you to create a password.
 """
 
 import hmac
 import logging
 import os
+import re
 import secrets
 import time
 from datetime import timedelta
 from functools import wraps
 
-from flask import Flask, abort, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (Flask, abort, flash, jsonify, redirect, render_template, request, send_file, session,
+                   url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import secrets_store
+from app import LOGS_DIR, brand_editor, secrets_store, status
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
-from app.keys import KEYS, KEYS_BY_NAME
+from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
+from app.web import brand_forms
 
 log = logging.getLogger(__name__)
 
 MAX_FAILED_LOGINS = 5
 LOCKOUT_SECONDS = 300
 _failed_logins: list[float] = []
+
+# Buttons for work the agent will do. Each turns on when its phase is built.
+ACTIONS = [
+    ("sync", "Get products from Shopify", "Copies your products, prices and stock into the agent.", 1),
+    ("plan", "Make this week's plan", "Claude plans the week and sends it to your Telegram.", 1),
+    ("drafts", "Create drafts now", "Makes the next posts and sends them to Telegram for approval.", 2),
+    ("image", "Make one AI image", "Pick a product; Gemini makes a lifestyle image of it.", 2),
+    ("reel", "Make one reel", "Pick a product; Veo makes a short vertical video.", 2),
+    ("queue", "See scheduled posts", "Everything approved and waiting to go out.", 3),
+    ("pause", "Pause all posting", "Stops posting until you press Resume.", 3),
+    ("stats", "Last 7 days performance", "Reach, saves, shares and clicks per post.", 4),
+]
 
 
 def create_app() -> Flask:
@@ -36,7 +58,10 @@ def create_app() -> Flask:
         # On Railway/Render the site is https; set COOKIE_SECURE=1 there.
         SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+        MAX_CONTENT_LENGTH=6 * 1024 * 1024,  # logo uploads
     )
+
+    # ---------- login & safety ----------
 
     def password_is_set() -> bool:
         return bool(secrets_store.get("SETTINGS_PASSWORD") or secrets_store.get("SETTINGS_PASSWORD_HASH"))
@@ -52,8 +77,6 @@ def create_app() -> Flask:
         if "csrf" not in session:
             session["csrf"] = secrets.token_urlsafe(32)
         return session["csrf"]
-
-    app.jinja_env.globals["csrf_token"] = csrf_token
 
     @app.before_request
     def check_csrf():
@@ -72,16 +95,15 @@ def create_app() -> Flask:
             return view(*args, **kwargs)
         return wrapper
 
-    def current_brand():
+    def current_brand_slug() -> str | None:
         brands = list_brands()
         slug = session.get("brand")
-        if slug not in brands:
-            slug = brands[0] if brands else None
-        return slug, brands
+        return slug if slug in brands else (brands[0] if brands else None)
 
-    @app.route("/")
-    def home():
-        return redirect(url_for("settings"))
+    @app.context_processor
+    def template_globals():
+        return {"csrf_token": csrf_token, "brands": list_brands(), "brand_slug": current_brand_slug(),
+                "page": request.endpoint}
 
     @app.route("/setup-password", methods=["GET", "POST"])
     def setup_password():
@@ -98,8 +120,8 @@ def create_app() -> Flask:
                 session.clear()
                 session["logged_in"] = True
                 session.permanent = True
-                log.info("Settings page password created")
-                return redirect(url_for("settings"))
+                log.info("Control Center password created")
+                return redirect(url_for("home"))
         return render_template("setup_password.html")
 
     @app.route("/login", methods=["GET", "POST"])
@@ -115,11 +137,11 @@ def create_app() -> Flask:
                 session.clear()
                 session["logged_in"] = True
                 session.permanent = True
-                log.info("Settings page: logged in")
-                return redirect(url_for("settings"))
+                log.info("Control Center: logged in")
+                return redirect(url_for("home"))
             else:
                 _failed_logins.append(now)
-                log.warning("Settings page: wrong password")
+                log.warning("Control Center: wrong password")
                 flash("Wrong password.", "error")
         return render_template("login.html")
 
@@ -128,89 +150,206 @@ def create_app() -> Flask:
         session.clear()
         return redirect(url_for("login"))
 
-    @app.route("/settings")
-    @login_required
-    def settings():
-        slug, brands = current_brand()
-        brand_error, prefix = None, ""
-        if slug:
-            try:
-                prefix = load_brand(slug).config.get("env_prefix", "") or ""
-            except BrandConfigError as e:
-                brand_error = str(e)
-        rows = []
-        for k in KEYS:
-            env_name = _env_name(k.name, prefix)
-            value = secrets_store.get(env_name)
-            rows.append({
-                "spec": k,
-                "env_name": env_name,
-                "is_set": bool(value),
-                "display": (value if not k.secret else secrets_store.mask(value)) if value else "not set",
-            })
-        groups = {}
-        for row in rows:
-            groups.setdefault(row["spec"].test or "other", []).append(row)
-        return render_template("settings.html", groups=groups, brands=brands, brand=slug,
-                               brand_error=brand_error, on_host=bool(os.environ.get("RAILWAY_ENVIRONMENT")
-                                                                     or os.environ.get("RENDER")))
-
-    @app.route("/settings/brand", methods=["POST"])
+    @app.route("/brand/switch", methods=["POST"])
     @login_required
     def switch_brand():
         slug = request.form.get("brand")
         if slug in list_brands():
             session["brand"] = slug
-        return redirect(url_for("settings"))
+        return redirect(request.referrer or url_for("home"))
 
-    @app.route("/settings/save", methods=["POST"])
+    # ---------- Home ----------
+
+    @app.route("/")
     @login_required
-    def save_key():
-        name = request.form.get("name", "")
-        value = request.form.get("value", "")
-        slug, _ = current_brand()
-        spec = KEYS_BY_NAME.get(name)
-        if spec is None:
-            abort(400)
-        prefix = _brand_prefix(slug)
+    def home():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        results = status.test_results(slug) if slug else {}
+        connected = [s for s in SERVICES if results.get(s.id, {}).get("ok")]
+        todo = _brand_todo(brand) if brand else []
+        next_service = next((s for s in SERVICES if not results.get(s.id, {}).get("ok")), None)
+        return render_template("home.html", brand=brand, brand_error=brand_error, services=SERVICES,
+                               results=results, connected=connected, brand_todo=todo,
+                               next_service=next_service, actions=ACTIONS, current_phase=0)
+
+    @app.route("/check-all", methods=["POST"])
+    @login_required
+    def check_all():
+        slug = current_brand_slug()
+        brand, error = _load(slug)
+        if error:
+            flash(error, "error")
+            return redirect(url_for("home"))
+        for service in SERVICES:
+            ok, message = run_test(service.id, brand)
+            status.save_test_result(slug, service.id, ok, message)
+            brand, _ = _load(slug)  # a test may have filled in IDs
+        flash("Checked every connection. Results are below.", "ok")
+        return redirect(url_for("home"))
+
+    # ---------- Connect ----------
+
+    @app.route("/connect")
+    @login_required
+    def connect():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        prefix = _prefix(brand)
+        results = status.test_results(slug) if slug else {}
+        cards = []
+        for s in SERVICES:
+            fields = []
+            for name in s.keys:
+                spec = KEYS_BY_NAME[name]
+                value = secrets_store.get(_env_name(name, prefix))
+                fields.append({"spec": spec, "is_set": bool(value),
+                               "display": (secrets_store.mask(value) if spec.secret else value) if value else ""})
+            cards.append({"service": s, "fields": fields, "result": results.get(s.id)})
+        store_domain = brand.config["shopify"].get("store_domain", "") if brand else ""
+        if "your-store" in (store_domain or ""):
+            store_domain = ""
+        return render_template("connect.html", cards=cards, brand=brand, brand_error=brand_error,
+                               store_domain=store_domain,
+                               on_host=bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RENDER")))
+
+    @app.route("/connect/<service_id>", methods=["POST"])
+    @login_required
+    def connect_save(service_id):
+        service = SERVICES_BY_ID.get(service_id) or abort(404)
+        slug = current_brand_slug()
+        brand, error = _load(slug)
+        if error:
+            flash(error, "error")
+            return redirect(url_for("connect"))
+        prefix = _prefix(brand)
         try:
-            if request.form.get("action") == "clear":
-                secrets_store.save(_env_name(name, prefix), "")
-                flash(f"{spec.label} removed.", "ok")
-                log.info("Settings page: %s cleared", _env_name(name, prefix))
-            elif not value.strip():
-                flash(f"Paste the {spec.label} in the box first.", "error")
-            else:
-                secrets_store.save(_env_name(name, prefix), value)
-                flash(f"{spec.label} saved. Press Test to check it works.", "ok")
-                log.info("Settings page: %s updated", _env_name(name, prefix))  # never the value
-        except ValueError as e:
+            if service.id == "shopify" and request.form.get("store_domain", "").strip():
+                brand_editor.update_config(slug, {
+                    "shopify.store_domain": brand_editor.normalize_shop_domain(request.form["store_domain"])})
+            for name in service.keys:
+                value = request.form.get(name, "").strip()
+                if request.form.get(f"clear_{name}"):
+                    secrets_store.save(_env_name(name, prefix), "")
+                    log.info("Control Center: %s cleared", _env_name(name, prefix))
+                elif value:
+                    secrets_store.save(_env_name(name, prefix), value)
+                    log.info("Control Center: %s updated", _env_name(name, prefix))  # never the value
+        except (ValueError, BrandConfigError) as e:
             flash(str(e), "error")
-        return redirect(url_for("settings") + f"#{spec.test or ''}")
+            return redirect(url_for("connect") + f"#{service.id}")
+
+        brand, _ = _load(slug)
+        ok, message = run_test(service.id, brand)
+        status.save_test_result(slug, service.id, ok, message)
+        flash(("✅ " if ok else "❌ ") + f"{service.title}: {message}", "ok" if ok else "error")
+        return redirect(url_for("connect") + f"#{service.id}")
+
+    # Kept for the old Settings page link.
+    @app.route("/settings")
+    def settings():
+        return redirect(url_for("connect"))
 
     @app.route("/settings/test", methods=["POST"])
     @login_required
     def test_key():
-        slug, _ = current_brand()
-        if not slug:
-            return jsonify(ok=False, message="No brand folder found in brands/.")
-        try:
-            brand = load_brand(slug)
-        except BrandConfigError as e:
-            return jsonify(ok=False, message=str(e))
-        ok, message = run_test(request.form.get("test", ""), brand)
+        slug = current_brand_slug()
+        brand, error = _load(slug)
+        if error:
+            return jsonify(ok=False, message=error)
+        test_name = request.form.get("test", "")
+        ok, message = run_test(test_name, brand)
+        if test_name in SERVICES_BY_ID:
+            status.save_test_result(slug, test_name, ok, message)
         return jsonify(ok=ok, message=message)
+
+    # ---------- Brand ----------
+
+    @app.route("/brand")
+    @login_required
+    def brand_page():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        if brand is None:
+            return render_template("brand.html", brand=None, brand_error=brand_error)
+        slots = {s["day"]: s["time"] for s in reversed(brand.config["schedule"].get("slots", []))}
+        return render_template(
+            "brand.html", brand=brand, brand_error=None, c=brand.config, slots=slots, f=brand_forms,
+            has_logo=bool(brand_editor.logo_file(slug)), has_logo_white=bool(brand_editor.logo_file(slug, True)),
+            store_domain="" if "your-store" in brand.config["shopify"].get("store_domain", "")
+            else brand.config["shopify"].get("store_domain", ""))
+
+    @app.route("/brand/<section>", methods=["POST"])
+    @login_required
+    def brand_save(section):
+        slug = current_brand_slug()
+        if section == "rules":
+            try:
+                brand_editor.save_rules(slug, request.form.get("rules", ""))
+                flash("Brand rules saved.", "ok")
+                log.info("Control Center: brand rules updated")
+            except BrandConfigError as e:
+                flash(str(e), "error")
+            return redirect(url_for("brand_page") + "#rules")
+        if section == "logo":
+            upload = request.files.get("logo")
+            if not upload or not upload.filename:
+                flash("Choose a logo file first.", "error")
+            else:
+                try:
+                    brand_editor.save_logo(slug, upload.read(), white_version=request.form.get("which") == "white")
+                    flash("Logo saved.", "ok")
+                    log.info("Control Center: logo uploaded")
+                except BrandConfigError as e:
+                    flash(str(e), "error")
+            return redirect(url_for("brand_page") + "#look")
+        parse = brand_forms.SECTIONS.get(section) or abort(404)
+        try:
+            brand_editor.update_config(slug, parse(request.form))
+            flash("Saved.", "ok")
+            log.info("Control Center: brand settings '%s' updated", section)
+        except BrandConfigError as e:
+            flash(str(e), "error")
+        return redirect(url_for("brand_page") + f"#{section}")
+
+    @app.route("/brand/logo/<which>")
+    @login_required
+    def brand_logo(which):
+        path = brand_editor.logo_file(current_brand_slug(), white_version=(which == "white"))
+        if not path:
+            abort(404)
+        return send_file(path, max_age=0)
+
+    # ---------- Activity ----------
+
+    @app.route("/activity")
+    @login_required
+    def activity():
+        files = sorted((p.name for p in LOGS_DIR.glob("*.log") if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.log", p.name)),
+                       reverse=True) if LOGS_DIR.exists() else []
+        chosen = request.args.get("day") or (files[0] if files else None)
+        lines = []
+        if chosen in files:
+            text = (LOGS_DIR / chosen).read_text(encoding="utf-8", errors="replace")
+            lines = list(reversed(text.splitlines()[-500:]))  # newest first
+        return render_template("activity.html", files=files, chosen=chosen, lines=lines)
 
     return app
 
 
-def _brand_prefix(slug: str | None) -> str:
+# ---------- helpers ----------
+
+def _load(slug):
     if not slug:
-        return ""
+        return None, "No brand folder found in brands/."
     try:
-        return load_brand(slug).config.get("env_prefix", "") or ""
-    except BrandConfigError:
-        return ""
+        return load_brand(slug), None
+    except BrandConfigError as e:
+        return None, str(e)
+
+
+def _prefix(brand) -> str:
+    return (brand.config.get("env_prefix", "") or "") if brand else ""
 
 
 def _env_name(name: str, prefix: str) -> str:
@@ -218,3 +357,16 @@ def _env_name(name: str, prefix: str) -> str:
     if name in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
         return name
     return prefix + name
+
+
+def _brand_todo(brand) -> list[tuple[str, str]]:
+    """Brand details still missing, as (what, which Brand-page section)."""
+    c = brand.config
+    todo = []
+    if "your-store" in (c["shopify"].get("store_domain") or ""):
+        todo.append(("Add your Shopify store address", "basics"))
+    if not brand_editor.logo_file(brand.slug):
+        todo.append(("Upload your logo", "look"))
+    if c["style"]["colors"].get("primary", "").upper() == "#0B2545":
+        todo.append(("Set your brand colours (still the starter colours)", "look"))
+    return todo

@@ -1,8 +1,13 @@
 # Setup Guide — getting your 5 keys
 
+> **You don't need this file.** The same steps are built into the app: open the
+> Control Center (double-click the start file) → **Connect accounts**. Each
+> service has a "Show me how" box, paste fields and one **Save & test** button.
+> This page is a printable backup.
+
 You need five accounts connected. Do them in this order; each takes 5–15
-minutes. After each one, paste the key on the **Settings page**
-(http://localhost:8000) and press **Test**. Green ✅ = done.
+minutes. After each one, paste the key in **Connect accounts** and press
+**Save & test**. Green ✅ = done.
 
 | # | Service | What it does for the agent | Cost |
 |---|---------|----------------------------|------|
@@ -13,7 +18,7 @@ minutes. After each one, paste the key on the **Settings page**
 | 5 | Meta | Posts to Instagram + Facebook | Free |
 
 > **Golden rule:** a key is like a password to your account. Paste it only
-> into the Settings page. Never send it on WhatsApp, email, or Telegram,
+> into the app. Never send it on WhatsApp, email, or Telegram,
 > and never paste it into ChatGPT/Claude chats.
 
 ---
@@ -28,10 +33,10 @@ minutes. After each one, paste the key on the **Settings page**
    `skipperpacks_agent_bot` (if taken, add numbers).
 6. BotFather replies with a token that looks like
    `1234567890:AAH...`. Copy it.
-7. Settings page → **Telegram bot token** → paste → **Save**.
+7. Connect accounts → **Telegram bot token** → paste → **Save**.
 8. In Telegram, tap the link BotFather gave you (t.me/your_bot) and press
    **Start**. This lets the bot message you.
-9. Settings page → Telegram → **Test**. The agent finds your chat ID by
+9. Connect accounts → Telegram → **Test**. The agent finds your chat ID by
    itself and sends you "✅ Skipper Packs agent is connected".
 
 ---
@@ -43,7 +48,7 @@ minutes. After each one, paste the key on the **Settings page**
    to start; the agent will use roughly US$3–10 a month).
 3. Left menu → **API keys** → **Create Key** → name it `skipper-agent`.
 4. Copy the key (starts with `sk-ant-`). You can only see it once.
-5. Settings page → **Claude API key** → paste → **Save** → **Test**.
+5. Connect accounts → **Claude API key** → paste → **Save & test**.
 
 Tip: in **Billing → Limits**, set a monthly spend limit (e.g. US$20) so
 there are no surprises.
@@ -60,7 +65,7 @@ there are no surprises.
 4. **Turn on billing** (needed for Veo reels and higher image limits): in AI
    Studio, open **Billing** (or the "Set up billing" link next to your key)
    and add a card. Google may give free credits for new accounts.
-5. Settings page → **Gemini API key** → paste → **Save** → **Test**. The
+5. Connect accounts → **Gemini API key** → paste → **Save & test**. The
    test also tells you whether Veo (reels) is available on your key.
 
 Tip: in Google Cloud Billing → **Budgets & alerts**, set a monthly budget
@@ -92,11 +97,9 @@ secret**; the agent swaps them for a fresh access key every day by itself.
 5. Go back to the app's home page and click **Install app** → choose your
    Skipper Packs store → **Install**.
 6. Open the app's **Settings**. Copy the **Client ID** and **Client secret**.
-7. Find your store's `.myshopify.com` address: Shopify admin →
-   **Settings → Domains** (looks like `skipperpacks-xyz.myshopify.com`).
-   Open `brands/skipperpacks/config.yaml` in Notepad/TextEdit and replace
-   `your-store.myshopify.com` with it. Save.
-8. Settings page → paste Client ID and Client secret → **Save** → **Test**.
+7. In your Shopify admin, copy the web address from the browser bar (looks
+   like `admin.shopify.com/store/your-store`) into the **Store address** box.
+8. Paste Client ID and Client secret → **Save & test**.
    You should see "Connected to 'Skipper Packs' — N products found".
 
 **If Test says "not in the same Shopify organization":** the Dev Dashboard
@@ -149,16 +152,12 @@ every 60 days and posting would silently stop).
    - `instagram_manage_insights`
    - `business_management`
 5. **Generate** → copy the token (long text starting `EAA`). Shown once.
-6. Settings page → **Meta token** → paste → **Save** → **Test**.
+6. Connect accounts → **Meta token** → paste → **Save & test**.
 
 ### 5d. Page ID and Instagram ID
-1. Facebook Page ID: open your Page on Facebook → **About** → **Page
-   transparency** → copy **Page ID**. Or ask me and I'll show another way.
-2. Open `brands/skipperpacks/config.yaml` → under `meta:` paste it into
-   `facebook_page_id: "..."` (keep the quotes). Save.
-3. Settings page → Meta → **Test** again. It will tell you your Instagram
-   account ID; paste it into `instagram_account_id: "..."` and Test once
-   more until it's green.
+Nothing to do — **Save & test** finds your Facebook Page and Instagram
+account and saves both. If you manage several Pages, it lists them and asks
+you to type the right Page ID under **Brand → Store & accounts**.
 
 ---
 
