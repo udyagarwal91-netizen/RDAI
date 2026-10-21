@@ -106,7 +106,8 @@ RDAI/
 
 ### Step 2 — get the project
 On GitHub, open this repository → green **Code** button → **Download ZIP**.
-Unzip it somewhere easy, like your Desktop.
+Unzip it, and put the contents in a short folder: on Windows **`C:\SkipperAgent`** (deep folders inside
+Downloads can hit Windows' path-length limit), on a Mac your home folder is fine.
 
 ### Step 3 — start it
 - **Windows:** double-click `start-windows.bat`.
