@@ -12,6 +12,7 @@ The first visit asks you to create a password.
 """
 
 import hmac
+import json
 import logging
 import os
 import re
@@ -24,10 +25,11 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
                    url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import LOGS_DIR, brand_editor, secrets_store, status
+from app import LOGS_DIR, brand_editor, jobs, planner, secrets_store, status
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
 from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
+from app.db import get_state
 from app.web import brand_forms
 
 log = logging.getLogger(__name__)
@@ -35,6 +37,8 @@ log = logging.getLogger(__name__)
 MAX_FAILED_LOGINS = 5
 LOCKOUT_SECONDS = 300
 _failed_logins: list[float] = []
+
+CURRENT_PHASE = 1  # raise as each phase ships; tiles at or below it become live buttons
 
 # Buttons for work the agent will do. Each turns on when its phase is built.
 ACTIONS = [
@@ -169,9 +173,56 @@ def create_app() -> Flask:
         connected = [s for s in SERVICES if results.get(s.id, {}).get("ok")]
         todo = _brand_todo(brand) if brand else []
         next_service = next((s for s in SERVICES if not results.get(s.id, {}).get("ok")), None)
+        job_status = jobs.status(slug) if slug else {}
+        last_sync = json.loads(get_state(slug, "last_sync") or "null") if slug else None
+        plan_rows = planner.upcoming_plan(brand) if brand else []
         return render_template("home.html", brand=brand, brand_error=brand_error, services=SERVICES,
                                results=results, connected=connected, brand_todo=todo,
-                               next_service=next_service, actions=ACTIONS, current_phase=0)
+                               next_service=next_service, actions=ACTIONS, current_phase=CURRENT_PHASE,
+                               jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()),
+                               last_sync=last_sync, plan_count=len(plan_rows),
+                               next_plan=jobs.next_plan_time(slug) if slug else None)
+
+    @app.route("/action/<action>", methods=["POST"])
+    @login_required
+    def run_action(action):
+        if action not in jobs.ACTIONS:
+            abort(404)
+        slug = current_brand_slug()
+        if jobs.start(slug, action):
+            flash("Started — this page updates by itself when it's done.", "ok")
+        else:
+            flash("That's already running. Give it a moment.", "warn")
+        return redirect(request.form.get("back") or url_for("home"))
+
+    @app.route("/job-status")
+    @login_required
+    def job_status():
+        return jsonify(jobs.status(current_brand_slug()))
+
+    # ---------- Plan & Products ----------
+
+    @app.route("/plan")
+    @login_required
+    def plan_page():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        job_status = jobs.status(slug) if slug else {}
+        return render_template("plan.html", brand=brand, brand_error=brand_error,
+                               rows=planner.upcoming_plan(brand) if brand else [], price_text=planner.price_text,
+                               jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()),
+                               next_plan=jobs.next_plan_time(slug) if slug else None)
+
+    @app.route("/products")
+    @login_required
+    def products_page():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        job_status = jobs.status(slug) if slug else {}
+        return render_template("products.html", brand=brand, brand_error=brand_error,
+                               styles=planner.catalog_styles(brand) if brand else [],
+                               last_sync=json.loads(get_state(slug, "last_sync") or "null") if slug else None,
+                               jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
 
     @app.route("/check-all", methods=["POST"])
     @login_required
@@ -308,6 +359,8 @@ def create_app() -> Flask:
             brand_editor.update_config(slug, parse(request.form))
             flash("Saved.", "ok")
             log.info("Control Center: brand settings '%s' updated", section)
+            if section == "schedule":
+                jobs.reload_schedule()
         except BrandConfigError as e:
             flash(str(e), "error")
         return redirect(url_for("brand_page") + f"#{section}")

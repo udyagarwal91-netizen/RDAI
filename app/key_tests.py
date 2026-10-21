@@ -9,7 +9,7 @@ import logging
 
 import requests
 
-from app import brand_editor, secrets_store
+from app import brand_editor, secrets_store, shopify
 from app.brands import Brand
 
 log = logging.getLogger(__name__)
@@ -71,44 +71,14 @@ def test_gemini(brand: Brand) -> tuple[bool, str]:
     return False, f"Google replied with error {r.status_code}."
 
 
-def shopify_access_token(brand: Brand) -> tuple[str | None, str]:
-    """Get a Shopify Admin API token.
-
-    Old custom apps: a permanent shpat_ token. New Dev Dashboard apps: swap
-    Client ID + secret for a token that lasts 24 hours (fetched fresh here;
-    Phase 1 will cache it).
-    """
-    legacy = brand.secret("SHOPIFY_ADMIN_TOKEN")
-    if legacy:
-        return legacy, ""
-    client_id = brand.secret("SHOPIFY_CLIENT_ID")
-    client_secret = brand.secret("SHOPIFY_CLIENT_SECRET")
-    if not (client_id and client_secret):
-        return None, _missing("Shopify Client ID", "Client secret")
-    domain = brand.config["shopify"]["store_domain"]
-    r = requests.post(
-        f"https://{domain}/admin/oauth/access_token",
-        data={"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret},
-        timeout=TIMEOUT,
-    )
-    if r.status_code == 200 and r.json().get("access_token"):
-        return r.json()["access_token"], ""
-    body = r.text[:300]
-    if "shop_not_permitted" in body:
-        return None, ("Shopify refused: the app and the store are not in the same Shopify organization. "
-                      "See docs/SETUP_GUIDE.md, section 4 (end).")
-    if r.status_code in (400, 401):
-        return None, "Shopify rejected the Client ID / secret. Check both, and that the app is installed on the store."
-    return None, f"Shopify replied with error {r.status_code}. Is the app installed on your store?"
-
-
 def test_shopify(brand: Brand) -> tuple[bool, str]:
     domain = brand.config["shopify"]["store_domain"]
     if not domain or "your-store" in domain:
         return False, "Fill in the Store address box first (copy it from your Shopify admin's browser bar)."
-    token, problem = shopify_access_token(brand)
-    if not token:
-        return False, problem
+    try:
+        token = shopify.access_token(brand)
+    except shopify.ShopifyError as e:
+        return False, str(e)
     version = brand.config["shopify"].get("api_version", "2026-10")
     r = requests.post(
         f"https://{domain}/admin/api/{version}/graphql.json",

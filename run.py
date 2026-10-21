@@ -6,10 +6,10 @@ What happens:
 1. Creates your .env key file the first time (from .env.example).
 2. Sets up the database (data/agent.db) and the daily log files (logs/).
 3. Checks the brand folders in brands/.
-4. Opens the Settings page at http://localhost:8000
+4. Opens the Control Center at http://localhost:8000
 
-Later phases add the Telegram bot and the posting scheduler here, all in
-this one always-on program.
+It also starts the timer (daily product sync, weekly plan) and the Telegram
+bot that answers your commands — all in this one always-on program.
 """
 
 import logging
@@ -22,6 +22,7 @@ from app import secrets_store
 secrets_store.load_env()  # must happen before anything reads a key
 
 from app.brands import BrandConfigError, list_brands, load_brand  # noqa: E402
+from app import jobs, telegram  # noqa: E402
 from app.db import DB_PATH, init_db  # noqa: E402
 from app.logging_setup import setup_logging  # noqa: E402
 from app.web import create_app  # noqa: E402
@@ -43,6 +44,10 @@ def main() -> None:
             log.info("Brand loaded: %s (auto_publish=%s)", brand.name, brand.auto_publish)
         except BrandConfigError as e:
             log.error("Brand problem: %s", e)
+
+    jobs.start_scheduler()
+    for slug in brands:
+        telegram.Bot(lambda slug=slug: load_brand(slug)).start()
 
     # On a laptop, only this computer can open the page (127.0.0.1).
     # Hosts like Railway/Render set PORT, and then the page must be reachable from outside.

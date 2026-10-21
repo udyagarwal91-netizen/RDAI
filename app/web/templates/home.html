@@ -5,6 +5,7 @@
 <p class="muted">Your control center. Everything the agent needs is set up from here — no files to edit.</p>
 
 {% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
 
 {# ---- What to do next ---- #}
 <section class="card">
@@ -66,14 +67,29 @@
 {# ---- Actions ---- #}
 <section class="card">
   <h2>What the agent can do</h2>
-  <p class="muted">These buttons switch on as each part of the agent is built. Greyed-out ones are coming soon.</p>
+  <p class="muted">
+    {% if last_sync %}Products last fetched {{ last_sync.at[:16].replace("T", " ") }} UTC — {{ last_sync.total }} products.{% else %}Products not fetched yet.{% endif %}
+    {% if plan_count %}· <a href="{{ url_for('plan_page') }}">{{ plan_count }} posts planned</a>.{% endif %}
+    {% if next_plan %}· Next automatic plan: <b>{{ next_plan }}</b>.{% endif %}
+  </p>
   <div class="grid">
     {% for key, title, desc, phase in actions %}
+    {% set live = phase <= current_phase %}
+    {% set j = jobs.get(key) %}
     <div class="tile">
       <div class="row-head"><b>{{ title }}</b>
-        {% if phase > current_phase %}<span class="pill soon">coming in phase {{ phase }}</span>{% endif %}</div>
+        {% if not live %}<span class="pill soon">coming in phase {{ phase }}</span>{% endif %}</div>
       <div class="muted">{{ desc }}</div>
-      <form><button type="button" {% if phase > current_phase %}disabled{% endif %}>{{ title }}</button></form>
+      {% if j and j.state == "done" %}<div class="result ok">✅ {{ j.message }} <span class="muted">({{ j.at }})</span></div>{% endif %}
+      {% if live %}
+      <form method="post" action="{{ url_for('run_action', action=key) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button type="submit" {% if j and j.state == "running" %}disabled{% endif %} data-busy="Starting…">
+          {{ "Working…" if j and j.state == "running" else title }}</button>
+      </form>
+      {% else %}
+      <form><button type="button" disabled>{{ title }}</button></form>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

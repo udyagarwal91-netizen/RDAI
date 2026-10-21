@@ -151,6 +151,25 @@ def safety(form) -> dict:
     }
 
 
+def festivals(form) -> dict:
+    """One sale day per line: 2026-11-20 | Skipper Week Sale | optional note."""
+    from datetime import date
+
+    items = []
+    for n, line in enumerate((form.get("custom_dates") or "").splitlines(), start=1):
+        if not line.strip():
+            continue
+        parts = [x.strip() for x in line.split("|")]
+        try:
+            day = date.fromisoformat(parts[0])
+        except ValueError:
+            raise BrandConfigError(f"Line {n}: start with the date like 2026-11-20, then | and the name.") from None
+        if len(parts) < 2 or not parts[1]:
+            raise BrandConfigError(f"Line {n}: add a name after the date, e.g. 2026-11-20 | Winter Sale.")
+        items.append({"date": day.isoformat(), "name": parts[1][:80], "note": (parts[2] if len(parts) > 2 else "")[:200]})
+    return {"festivals.custom_dates": items}
+
+
 def approval(form) -> dict:
     return {"auto_publish": form.get("auto_publish") == "on"}
 
@@ -162,5 +181,6 @@ SECTIONS = {
     "look": look,
     "voice": voice,
     "safety": safety,
+    "festivals": festivals,
     "approval": approval,
 }

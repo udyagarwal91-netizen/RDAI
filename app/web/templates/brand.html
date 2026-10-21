@@ -13,7 +13,7 @@
 <div class="toc">
   <a href="#basics">Store &amp; accounts</a><a href="#schedule">Posting days</a><a href="#mix">Content mix</a>
   <a href="#look">Colours &amp; logo</a><a href="#voice">Voice &amp; hashtags</a><a href="#safety">Banned words</a>
-  <a href="#approval">Approval mode</a><a href="#rules">Brand rules</a>
+  <a href="#festivals">Sale days</a><a href="#approval">Approval mode</a><a href="#rules">Brand rules</a>
 </div>
 
 {# ---------- Store & accounts ---------- #}
@@ -173,6 +173,19 @@
       <label>Only if Shopify proves it <span class="muted">(e.g. "free", "sale")</span>
         <textarea name="needs_proof_words">{{ (c.needs_proof_words or [])|join('\n') }}</textarea></label>
     </div>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Festivals ---------- #}
+<section class="card" id="festivals">
+  <h2>Your sale days &amp; special dates</h2>
+  <p class="muted">The planner already knows the big festivals (Diwali, Republic Day, Holi…). Add your own sale days
+    here — one per line: <code>2026-11-20 | Winter Sale | 10% off on 3-pc packs</code>. Only put offers that are
+    really set up in Shopify.</p>
+  <form method="post" action="{{ url_for('brand_save', section='festivals') }}">{{ csrf() }}
+    <textarea name="custom_dates" placeholder="2026-11-20 | Winter Sale | note">{% for d in (c.festivals or {}).get('custom_dates') or [] %}{{ d.date }} | {{ d.name }}{% if d.note %} | {{ d.note }}{% endif %}
+{% endfor %}</textarea>
     {{ save() }}
   </form>
 </section>

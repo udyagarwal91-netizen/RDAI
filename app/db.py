@@ -115,10 +115,39 @@ CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(brand, status);
 """
 
 
+# Columns added after the first release. init_db() adds any that are missing,
+# so an existing database upgrades itself without losing data.
+ADDED_COLUMNS = [
+    ("products", "pack_size", "INTEGER"),        # 2 or 3, read from the title ("3 Pcs Pack")
+    ("products", "max_price", "REAL"),
+    ("products", "compare_at_min", "REAL"),      # lowest crossed-out (MRP) price, if any
+    ("products", "url", "TEXT"),                 # product page on the website
+    ("products", "issues", "TEXT"),              # JSON list of data mistakes found in Shopify (e.g. ₹0 price)
+    ("content_plan", "hook", "TEXT"),            # suggested opening line
+    ("content_plan", "notes", "TEXT"),           # why this post, or warnings for the owner
+]
+
+
 def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        for table, column, kind in ADDED_COLUMNS:
+            existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+
+
+def get_state(brand: str, key: str, default: str | None = None) -> str | None:
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM app_state WHERE brand = ? AND key = ?", (brand, key)).fetchone()
+    return row["value"] if row else default
+
+
+def set_state(brand: str, key: str, value: str) -> None:
+    with connect() as conn:
+        conn.execute("INSERT INTO app_state(brand, key, value) VALUES (?, ?, ?) "
+                     "ON CONFLICT(brand, key) DO UPDATE SET value = excluded.value", (brand, key, value))
 
 
 @contextmanager

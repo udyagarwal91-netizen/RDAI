@@ -44,7 +44,8 @@ def test_home_shows_checklist_and_next_step(client):
     html = client.get("/").get_data(as_text=True)
     assert "0 of 5 accounts connected" in html
     assert "Connect <b>Telegram</b>" in html
-    assert "coming in phase 1" in html
+    assert "coming in phase 2" in html
+    assert "/action/sync" in html and "/action/plan" in html  # phase 1 buttons are live
 
 
 def test_connect_save_and_test_stores_key_masked(client, monkeypatch):
@@ -155,3 +156,18 @@ def test_activity_page_shows_logs(client, sandbox):
 
 def test_csrf_required(client):
     assert client.post("/brand/approval", data={"auto_publish": "on"}).status_code == 400
+
+
+def test_plan_and_products_pages_render_empty(client):
+    assert "No plan yet" in client.get("/plan").get_data(as_text=True)
+    assert "No products yet" in client.get("/products").get_data(as_text=True)
+
+
+def test_action_button_starts_job(client, monkeypatch):
+    import app.web as web
+
+    started = []
+    monkeypatch.setattr(web.jobs, "start", lambda slug, action: started.append(action) or True)
+    client.post("/action/sync", data={"csrf": _token(client)})
+    assert started == ["sync"]
+    assert client.post("/action/delete-everything", data={"csrf": _token(client)}).status_code == 404

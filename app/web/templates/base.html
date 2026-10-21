@@ -93,6 +93,20 @@
   .toc a { font-size:13px; padding:5px 10px; border:1px solid var(--line); border-radius:99px; text-decoration:none; }
   .switch { display:flex; gap:10px; align-items:center; font-weight:600; }
   .switch input { width:20px; height:20px; }
+  .plan-item { display:grid; grid-template-columns:84px 1fr; gap:14px; padding:14px 0; border-top:1px solid var(--line); }
+  .plan-item:first-child { border-top:0; }
+  .thumb { width:84px; height:84px; object-fit:cover; border-radius:10px; background:#fff; border:1px solid var(--line); }
+  .thumb.empty { display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }
+  .meta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:2px 0 6px; }
+  .warn-line { color:var(--warn); font-size:13.5px; }
+  .job { display:flex; gap:10px; align-items:center; }
+  .spinner { width:16px; height:16px; border:2px solid var(--line); border-top-color:var(--brand); border-radius:50%;
+             animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .styles { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; margin-top:12px; }
+  .style-card { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
+  .style-card img { width:100%; aspect-ratio:1; object-fit:cover; background:#fff; display:block; }
+  .style-card .body { padding:10px 12px; font-size:14px; }
 </style>
 </head>
 <body>
@@ -101,6 +115,8 @@
   <span class="logo">Social Agent</span>
   <nav>
     <a href="{{ url_for('home') }}" class="{{ 'on' if page == 'home' }}">Home</a>
+    <a href="{{ url_for('plan_page') }}" class="{{ 'on' if page == 'plan_page' }}">Plan</a>
+    <a href="{{ url_for('products_page') }}" class="{{ 'on' if page == 'products_page' }}">Products</a>
     <a href="{{ url_for('connect') }}" class="{{ 'on' if page == 'connect' }}">Connect accounts</a>
     <a href="{{ url_for('brand_page') }}" class="{{ 'on' if page == 'brand_page' }}">Brand</a>
     <a href="{{ url_for('activity') }}" class="{{ 'on' if page == 'activity' }}">Activity</a>
