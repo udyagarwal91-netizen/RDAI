@@ -6,6 +6,7 @@ end up in log files.
 """
 
 import logging
+import sys
 from datetime import datetime
 
 from app import LOGS_DIR, secrets_store
@@ -47,6 +48,13 @@ class DailyFileHandler(logging.FileHandler):
 
 
 def setup_logging() -> None:
+    # The Windows black window can't show ₹ or emoji by default; without this, a log line with ₹ prints a
+    # scary "Logging error" instead. Switch it to UTF-8 and replace anything it still can't show.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     root = logging.getLogger()
     if any(isinstance(h, DailyFileHandler) for h in root.handlers):
         return  # already set up

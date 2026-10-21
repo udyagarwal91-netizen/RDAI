@@ -55,7 +55,10 @@ def main() -> None:
     host = os.environ.get("HOST", "0.0.0.0" if on_host else "127.0.0.1")
     port = int(os.environ.get("PORT", 8000))
     url = f"http://localhost:{port}"
-    log.info("Control Center: %s  (press Ctrl+C to stop the agent)", url)
+    log.info("Control Center: %s", url)
+    print("\n" + "=" * 64 + f"\n  THE AGENT IS RUNNING.  Open {url} in your browser.\n"
+          "  Keep this window open (you can minimise it). Closing it stops the agent.\n"
+          "  New lines appear here only when something happens.\n" + "=" * 64 + "\n", flush=True)
     if not on_host and os.environ.get("NO_BROWSER") != "1":
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
 
