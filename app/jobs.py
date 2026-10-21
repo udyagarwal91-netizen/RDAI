@@ -8,13 +8,14 @@ can show "Working…" and then the result.
 
 import json
 import logging
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app import planner, shopify, telegram
+from app import planner, shopify, telegram, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.db import get_state, set_state
 
@@ -58,8 +59,19 @@ def send_plan(slug: str) -> str:
     return "Sent the plan to your Telegram."
 
 
-ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan}
-FRIENDLY_ERRORS = (shopify.ShopifyError, planner.PlanError, telegram.TelegramError, BrandConfigError)
+def update(slug: str) -> str:
+    busy = [a for s, a in _running if a != "update"]
+    if busy:
+        raise updater.UpdateError("The agent is busy right now. Try again in a minute, when it has finished.")
+    message = updater.apply_update()
+    # Give the page a moment to show the result, then stop. The start file starts the agent again.
+    threading.Timer(3, lambda: os._exit(updater.RESTART_EXIT_CODE)).start()
+    return message
+
+
+ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update}
+FRIENDLY_ERRORS = (shopify.ShopifyError, planner.PlanError, telegram.TelegramError, BrandConfigError,
+                   updater.UpdateError)
 
 
 # ---------------------------------------------------------------- background running

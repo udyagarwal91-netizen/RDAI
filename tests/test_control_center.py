@@ -42,7 +42,7 @@ def test_first_visit_asks_for_password(sandbox):
 
 def test_home_shows_checklist_and_next_step(client):
     html = client.get("/").get_data(as_text=True)
-    assert "0 of 5 accounts connected" in html
+    assert "0 of 6 accounts connected" in html
     assert "Connect <b>Telegram</b>" in html
     assert "coming in phase 2" in html
     assert "/action/sync" in html and "/action/plan" in html  # phase 1 buttons are live
@@ -57,7 +57,7 @@ def test_connect_save_and_test_stores_key_masked(client, monkeypatch):
     assert secrets_store.get("TELEGRAM_BOT_TOKEN") == "123456:ABCDEFGHIJKLMNOP"
     html = client.get("/connect").get_data(as_text=True)
     assert "1234••••••MNOP" in html and "ABCDEFGHIJ" not in html
-    assert "1 of 5 accounts connected" in client.get("/").get_data(as_text=True)
+    assert "1 of 6 accounts connected" in client.get("/").get_data(as_text=True)
 
 
 def test_shopify_store_address_is_normalised_and_saved(client, monkeypatch):

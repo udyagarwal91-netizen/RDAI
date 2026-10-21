@@ -25,7 +25,7 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
                    url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import LOGS_DIR, brand_editor, jobs, planner, secrets_store, status
+from app import LOGS_DIR, brand_editor, jobs, planner, secrets_store, status, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
 from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
@@ -181,6 +181,7 @@ def create_app() -> Flask:
                                next_service=next_service, actions=ACTIONS, current_phase=CURRENT_PHASE,
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()),
                                last_sync=last_sync, plan_count=len(plan_rows),
+                               version=updater.installed(), has_github=bool(secrets_store.get("GITHUB_TOKEN")),
                                next_plan=jobs.next_plan_time(slug) if slug else None)
 
     @app.route("/action/<action>", methods=["POST"])
@@ -194,6 +195,20 @@ def create_app() -> Flask:
         else:
             flash("That's already running. Give it a moment.", "warn")
         return redirect(request.form.get("back") or url_for("home"))
+
+    @app.route("/updates/check", methods=["POST"])
+    @login_required
+    def check_updates():
+        try:
+            info = updater.check()
+            if info["available"]:
+                flash(f"A new version is ready ({info['latest']['date']}: {info['latest']['message']}). "
+                      "Press Update agent.", "ok")
+            else:
+                flash("You have the newest version.", "ok")
+        except updater.UpdateError as e:
+            flash(str(e), "error")
+        return redirect(url_for("home") + "#updates")
 
     @app.route("/job-status")
     @login_required

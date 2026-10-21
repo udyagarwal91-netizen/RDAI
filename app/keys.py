@@ -59,6 +59,11 @@ KEYS: list[KeySpec] = [
         "Message your bot once, then press Test — the agent finds it for you",
         "https://core.telegram.org/bots/features#botfather", "telegram", secret=False, optional=True,
     ),
+    KeySpec(
+        "GITHUB_TOKEN", "GitHub key (read-only)",
+        "Lets the agent download its own updates. Starts with github_pat_",
+        "https://github.com/settings/personal-access-tokens", "github",
+    ),
 ]
 
 KEYS_BY_NAME = {k.name: k for k in KEYS}
@@ -153,5 +158,21 @@ SERVICES: list[Service] = [
         ],
     ),
 ]
+
+SERVICES.append(Service(
+    "github", "Updates (GitHub)", "Lets you install new versions of the agent with one click.",
+    "Free", 3, ["GITHUB_TOKEN"],
+    [
+        'Sign in to <a href="https://github.com" target="_blank" rel="noopener">github.com</a> with the account '
+        'that owns the agent\'s code.',
+        'Open <a href="https://github.com/settings/personal-access-tokens/new?name=Skipper%20Agent%20updates'
+        '&description=Lets%20the%20agent%20download%20its%20own%20updates&expires_in=none&contents=read" '
+        'target="_blank" rel="noopener">this ready-made key page</a> (name, "no expiry" and read-only are filled in).',
+        'Under <b>Repository access</b> choose <b>Only select repositories</b> and pick <code>rdai</code>.',
+        'Under <b>Permissions</b> check it says <b>Contents: Read-only</b> (nothing else). '
+        'If GitHub doesn\'t allow "No expiration", pick the longest option.',
+        'Click <b>Generate token</b>, copy it (starts with <code>github_pat_</code>) and paste it below.',
+    ],
+))
 
 SERVICES_BY_ID = {s.id: s for s in SERVICES}

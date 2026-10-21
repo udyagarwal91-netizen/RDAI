@@ -42,6 +42,11 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   (background threads, status in `app_state` `job:<action>`) and the timer (weekly plan, daily 06:15 sync).
 - `app/telegram.py` — HTML messages split under 4096 chars; `Bot` long-polls `getUpdates` and ignores every chat
   except `TELEGRAM_CHAT_ID` (it idles until that is set, so the Settings test can still discover the chat ID).
+- `app/updater.py` — one-click updates: GitHub API (fine-grained `GITHUB_TOKEN`, contents:read) → zipball of
+  `UPDATE_BRANCH` → copied over the install, skipping `.env`, `.venv`, `data/`, `logs/`, `media/`; under `brands/`
+  only NEW files are added. Then `os._exit(3)`; the start scripts loop on exit code 3 to restart.
+  **Consequence: existing brand `config.yaml` files are never upgraded — any new config key must be read with a
+  default (`.get(..., default)`) and should get a Control Center form.**
 - `app/calendar_india.py` — only high-confidence festival dates (lunar ones marked approx) + owner's custom dates.
 - `app/secrets_store.py` — the only code that reads/writes keys. `.env` is loaded with `override=False`, so host
   env vars (Railway/Render) win. `save()` rewrites one line atomically and updates `os.environ` live.

@@ -177,10 +177,25 @@ def test_telegram(brand: Brand) -> tuple[bool, str]:
     return True, f"Bot @{bot} works. A test message was sent to your Telegram."
 
 
+def test_github(brand: Brand) -> tuple[bool, str]:
+    from app import updater
+
+    if not secrets_store.get("GITHUB_TOKEN"):
+        return False, _missing("GitHub key")
+    try:
+        info = updater.check()
+    except updater.UpdateError as e:
+        return False, str(e)
+    if info["available"]:
+        return True, f"Connected. A newer version ({info['latest']['date']}) is ready — press Update agent on Home."
+    return True, "Connected. You have the newest version."
+
+
 TESTS = {
     "anthropic": test_anthropic,
     "gemini": test_gemini,
     "shopify": test_shopify,
     "meta": test_meta,
     "telegram": test_telegram,
+    "github": test_github,
 }

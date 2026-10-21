@@ -118,6 +118,9 @@ The first start takes 2–3 minutes. Your browser then opens
 **http://localhost:8000**. Create a password, then follow
 the **Next step** button on the Home page — it walks you through everything.
 
+**Updates:** once you've added the GitHub key (Connect accounts → Updates), press **Update agent** on the
+Home page. It downloads the newest version, keeps your keys, data and brand settings, and restarts itself.
+
 **To stop:** close the black window (or press Ctrl+C in it).
 **To see what happened on a day:** open `logs/2026-10-20.log` (any date) in
 Notepad/TextEdit.

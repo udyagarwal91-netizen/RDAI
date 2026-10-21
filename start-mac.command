@@ -9,6 +9,12 @@ if [ ! -d .venv ]; then
   echo "Setting up for the first time..."
   python3 -m venv .venv || { read -r -p "Could not create .venv. Press Enter to close"; exit 1; }
 fi
-.venv/bin/python -m pip install --quiet --disable-pip-version-check -r requirements.txt \
-  || { read -r -p "Install failed. Check your internet. Press Enter to close"; exit 1; }
-.venv/bin/python run.py
+while true; do
+  .venv/bin/python -m pip install --quiet --disable-pip-version-check -r requirements.txt \
+    || { read -r -p "Install failed. Check your internet. Press Enter to close"; exit 1; }
+  .venv/bin/python run.py
+  # Exit code 3 means "I just updated myself, start me again".
+  [ $? -eq 3 ] || break
+  echo "Restarting after update..."
+done
+read -r -p "The agent has stopped. Press Enter to close"
