@@ -6,6 +6,7 @@ found during setup) — anyone else who finds the bot is ignored.
 """
 
 import html
+import json
 import logging
 import threading
 import time
@@ -92,12 +93,77 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
     return "\n\n".join(blocks)
 
 
-HELP = ("<b>Commands</b>\n/plan — this week's plan\n/help — this list\n\n"
-        "Coming soon: /generate, /image, /reel, /queue, /pause, /resume, /stats, /brand")
+HELP = ("<b>Commands</b>\n/plan — this week's plan\n/generate — make drafts for the coming week now\n"
+        "/image <i>product</i> — one AI image, e.g. <code>/image active brief 3</code>\n/help — this list\n\n"
+        "Coming soon: /reel, /queue, /pause, /resume, /stats, /brand")
+
+
+# ---------------------------------------------------------------- drafts
+
+def _call_files(token: str, method: str, data: dict, files: dict) -> dict:
+    """Like _call, but uploads photos from disk."""
+    try:
+        r = requests.post(API.format(token=token, method=method), data=data, files=files, timeout=120)
+    except requests.RequestException as e:
+        raise TelegramError(f"Couldn't reach Telegram ({type(e).__name__}).") from None
+    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if not body.get("ok"):
+        raise TelegramError(body.get("description") or f"Telegram error {r.status_code}")
+    return body["result"]
+
+
+def format_draft(brand: Brand, d: dict, header: str = "📝") -> str:
+    from app.planner import price_text
+
+    when = d["when"].strftime("%a %d %b, %I:%M %p").replace(" 0", " ") if d["when"] else "not scheduled yet"
+    lines = [f"{header} <b>Draft #{d['id']}</b> · {esc(when)} · {esc(d['format_label'])} · {esc((d['theme'] or '').title())}"]
+    for p in d["products"][:1]:
+        pack = f" ({p['pack_size']}-pc)" if p.get("pack_size") else ""
+        lines.append(f"🛍 {esc(p['title'])}{esc(pack)} — {esc(price_text(p))}")
+    if d.get("image_style") and d["image_style"] != "template":
+        lines.append(f"<i>AI image style: {esc(d['image_style'].replace('_', ' '))}</i>")
+    text = "\n".join(lines) + f"\n\n{esc(d['caption'])}"
+    if d["warnings"]:
+        text += "\n\n" + "\n".join(f"⚠️ {esc(w)}" for w in d["warnings"])
+    text += f"\n\n<i>Cost about US${d['cost_usd']:.2f}" + (f" · version {d['attempt']}" if d["attempt"] > 1 else "") + "</i>"
+    return text
+
+
+def draft_buttons(draft_id: int) -> dict:
+    return {"inline_keyboard": [
+        [{"text": "✅ Approve", "callback_data": f"a:{draft_id}"}, {"text": "🔁 Regenerate", "callback_data": f"r:{draft_id}"}],
+        [{"text": "✏️ Edit caption", "callback_data": f"e:{draft_id}"}, {"text": "❌ Reject", "callback_data": f"x:{draft_id}"}],
+    ]}
+
+
+def send_draft(brand: Brand, d: dict) -> None:
+    """Photo(s) first, then the caption with the four buttons."""
+    token, chat_id = brand.secret("TELEGRAM_BOT_TOKEN"), brand.secret("TELEGRAM_CHAT_ID")
+    if not (token and chat_id):
+        raise TelegramError("Telegram isn't connected yet (Connect accounts → Telegram).")
+    files = [f for f in d["files"] if f.exists()]
+    if len(files) == 1:
+        with open(files[0], "rb") as fh:
+            _call_files(token, "sendPhoto", {"chat_id": chat_id}, {"photo": fh})
+    elif files:
+        handles = {f"p{i}": open(f, "rb") for i, f in enumerate(files[:10])}
+        try:
+            media_json = json.dumps([{"type": "photo", "media": f"attach://{k}"} for k in handles])
+            _call_files(token, "sendMediaGroup", {"chat_id": chat_id, "media": media_json}, handles)
+        finally:
+            for fh in handles.values():
+                fh.close()
+    header = "⚠️" if d["warnings"] else "📝"
+    extra = {"reply_markup": draft_buttons(d["id"])} if d["status"] == "pending" else {}
+    msg = _call(token, "sendMessage", chat_id=chat_id, text=format_draft(brand, d, header)[:MAX_LEN],
+                parse_mode="HTML", disable_web_page_preview=True, **extra)
+    from app.db import connect
+    with connect() as conn:
+        conn.execute("UPDATE drafts SET telegram_msg_id = ? WHERE id = ?", (str(msg["message_id"]), d["id"]))
 
 
 class Bot:
-    """Listens for your Telegram commands in the background."""
+    """Listens for your Telegram commands and button taps in the background."""
 
     def __init__(self, get_brand):
         self._get_brand = get_brand  # function returning the current Brand (re-read so settings changes apply)
@@ -119,10 +185,16 @@ class Bot:
                     self._stop.wait(30)  # not set up yet; check again later
                     continue
                 updates = _call(token, "getUpdates", timeout=25, offset=self._offset,
-                                allowed_updates=["message"])
+                                allowed_updates=["message", "callback_query"])
                 for u in updates:
                     self._offset = u["update_id"] + 1
-                    self.handle(brand, u.get("message") or {}, chat_id)
+                    try:
+                        if "callback_query" in u:
+                            self.handle_button(brand, u["callback_query"], chat_id)
+                        else:
+                            self.handle(brand, u.get("message") or {}, chat_id)
+                    except TelegramError as e:
+                        log.warning("Telegram bot: %s", e)
             except TelegramError as e:
                 log.warning("Telegram bot: %s", e)
                 self._stop.wait(15)
@@ -130,17 +202,111 @@ class Bot:
                 log.exception("Telegram bot: unexpected problem")
                 self._stop.wait(15)
 
+    # -------- text messages and commands
+
     def handle(self, brand: Brand, message: dict, chat_id: str) -> None:
+        from app import jobs, producer
+        from app.db import get_state, set_state
+
         if str((message.get("chat") or {}).get("id")) != str(chat_id):
             return  # not you — ignore
-        command = (message.get("text") or "").strip().split()[0].split("@")[0].lower() if message.get("text") else ""
-        log.info("Telegram command: %s", command or "(non-text)")
-        if command == "/plan":
+        text = (message.get("text") or "").strip()
+        command = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
+        log.info("Telegram %s", f"command: {command}" if command else "message")
+
+        awaiting = get_state(brand.slug, "awaiting_caption")
+        if awaiting and text and not command:
+            self._new_caption(brand, int(awaiting), text)
+            return
+        if command == "/cancel":
+            set_state(brand.slug, "awaiting_caption", "")
+            send_message(brand, "OK, cancelled.")
+        elif command == "/plan":
             from app.planner import upcoming_plan
             send_message(brand, format_plan(brand, None, upcoming_plan(brand)))
+        elif command == "/generate":
+            started = jobs.start(brand.slug, "drafts")
+            send_message(brand, "🛠 Making drafts for the coming week — they'll arrive here one by one."
+                         if started else "Already making drafts — hang on.")
+        elif command == "/image":
+            query = text[len("/image"):].strip()
+            style = producer.find_style(brand, query) if query else None
+            if not style:
+                from app.planner import catalog_styles
+                names = "\n".join(f"• {esc(s['title'])}" for s in catalog_styles(brand))
+                send_message(brand, f"Which product? Send e.g. <code>/image active brief 3</code>\n\n{names}")
+                return
+            started = jobs.start(brand.slug, "image", style_id=style["id"])
+            send_message(brand, f"🎨 Making an AI image of <b>{esc(style['title'])}</b> (about a minute)…"
+                         if started else "Already making an image — hang on.")
         elif command in ("/start", "/help"):
             send_message(brand, HELP)
-        elif command in ("/generate", "/image", "/reel", "/queue", "/pause", "/resume", "/stats", "/brand"):
-            send_message(brand, f"{esc(command)} is coming in a later phase. For now: /plan")
-        elif command:
+        elif command in ("/reel", "/queue", "/pause", "/resume", "/stats", "/brand"):
+            send_message(brand, f"{esc(command)} is coming in a later phase. For now: /plan, /generate, /image")
+        elif text:
             send_message(brand, "I didn't understand that. " + HELP)
+
+    def _new_caption(self, brand: Brand, draft_id: int, text: str) -> None:
+        from app import factcheck, producer, writer
+        from app.db import set_state
+
+        set_state(brand.slug, "awaiting_caption", "")
+        d = producer.get_draft(brand, draft_id)
+        if not d:
+            send_message(brand, "That draft no longer exists.")
+            return
+        _, prices, packs = writer.product_facts(d["products"])
+        tags = " ".join(json.loads(d["hashtags"] or "[]"))
+        caption = text if "#" in text else (text + ("\n\n" + tags if tags else ""))
+        problems = factcheck.check_text(caption, brand, prices, packs)
+        producer.decide(brand, draft_id, "edit_caption", caption)
+        d = producer.get_draft(brand, draft_id)
+        d["warnings"] = problems
+        if problems:
+            send_message(brand, "Saved your caption, but please double-check: " + "; ".join(esc(p) for p in problems))
+        send_draft(brand, d)
+
+    # -------- button taps
+
+    def handle_button(self, brand: Brand, q: dict, chat_id: str) -> None:
+        from app import jobs, producer
+        from app.db import set_state
+
+        token = brand.secret("TELEGRAM_BOT_TOKEN")
+        if str((q.get("from") or {}).get("id")) != str(chat_id) and \
+                str(((q.get("message") or {}).get("chat") or {}).get("id")) != str(chat_id):
+            return  # not you — ignore
+        action, _, raw_id = (q.get("data") or "").partition(":")
+        draft_id = int(raw_id) if raw_id.isdigit() else 0
+        d = producer.get_draft(brand, draft_id)
+        if not d:
+            _call(token, "answerCallbackQuery", callback_query_id=q["id"], text="That draft no longer exists.")
+            return
+        if d["status"] != "pending" and action != "e":
+            _call(token, "answerCallbackQuery", callback_query_id=q["id"], text=f"Already {d['status']}.")
+            return
+        _call(token, "answerCallbackQuery", callback_query_id=q["id"])
+        msg = q.get("message") or {}
+        if msg.get("message_id") and action in ("a", "r", "x"):
+            try:  # remove the buttons so nothing is pressed twice
+                _call(token, "editMessageReplyMarkup", chat_id=chat_id, message_id=msg["message_id"],
+                      reply_markup={"inline_keyboard": []})
+            except TelegramError:
+                pass
+        when = d["when"].strftime("%a %d %b, %I:%M %p") if d["when"] else "when you schedule it"
+        if action == "a":
+            producer.decide(brand, draft_id, "approve")
+            send_message(brand, f"✅ Draft #{draft_id} approved. It will go out {esc(when)} "
+                                "(automatic posting is switched on in the next phase).")
+        elif action == "x":
+            producer.decide(brand, draft_id, "reject")
+            send_message(brand, f"❌ Draft #{draft_id} rejected. It won't be posted.")
+        elif action == "r":
+            producer.decide(brand, draft_id, "regenerate")
+            started = jobs.start(brand.slug, "regen", draft_id=draft_id)
+            send_message(brand, f"🔁 Making a new version of draft #{draft_id} (about a minute)…" if started
+                         else "Already remaking a draft — try again in a minute.")
+        elif action == "e":
+            set_state(brand.slug, "awaiting_caption", str(draft_id))
+            send_message(brand, f"✏️ Send me the new caption for draft #{draft_id} as your next message. "
+                                "Hashtags are kept unless you include your own. (/cancel to stop)")

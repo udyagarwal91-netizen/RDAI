@@ -9,22 +9,17 @@ that doesn't match Shopify is flagged for you.
 
 import json
 import logging
-import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import anthropic
-
-from app import calendar_india
+from app import calendar_india, claude, factcheck
 from app.brands import Brand
 from app.db import connect
 
 log = logging.getLogger(__name__)
 
-MODEL = "claude-opus-5-5"
-PRICE_PER_MTOK = {"input": 4.00, "output": 20.00, "cache_write": 5.00, "cache_read": 0.20}  # US$
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 THEMES = ["product", "offer", "education", "lifestyle"]
 FORMATS = ["template_image", "carousel", "gemini_image", "gemini_reel"]
@@ -263,36 +258,20 @@ def plan_schema(styles: list[dict], slots: list[Slot]) -> dict:
 
 # ---------------------------------------------------------------- checks
 
-_PRICE_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", re.IGNORECASE)
-
-
 def check_post(post: dict, styles_by_id: dict, brand: Brand) -> list[str]:
     """Problems with one planned post, in plain English (empty list = fine)."""
-    problems = []
-    text = f"{post['idea']} {post['hook']}"
-    allowed = set()
+    allowed, packs = set(), set()
     for sid in post["styles"]:
         s = styles_by_id[sid]
         allowed |= set(s["all_prices"]) | set(s["all_mrps"])
-    for m in _PRICE_RE.finditer(text):
-        value = float(m.group(1).replace(",", ""))
-        if value not in allowed:
-            problems.append(f"mentions ₹{value:g}, which isn't a Shopify price for this product")
-    if re.search(r"\b\d{1,2}\s*%", text):
-        problems.append("mentions a % discount — check it's real before posting")
-    lower = text.lower()
-    for word in brand.config.get("banned_words") or []:
-        if re.search(rf"\b{re.escape(word.lower())}\b", lower):
-            problems.append(f"uses the banned word '{word}'")
-    for word in brand.config.get("needs_proof_words") or []:
-        if re.search(rf"\b{re.escape(word.lower())}\b", lower):
-            problems.append(f"says '{word}' — only OK if Shopify really shows it")
-    return problems
+        if s["pack_size"]:
+            packs.add(s["pack_size"])
+    return factcheck.check_text(f"{post['idea']} {post['hook']}", brand, allowed, packs)
 
 
 # ---------------------------------------------------------------- main
 
-def make_plan(brand: Brand, start: date | None = None, client: anthropic.Anthropic | None = None) -> dict:
+def make_plan(brand: Brand, start: date | None = None, client=None) -> dict:
     """Make and save the plan. Returns {"summary", "rows", "cost_usd", "model"}."""
     tz = ZoneInfo(brand.config["schedule"].get("timezone", "Asia/Kolkata"))
     start = start or (datetime.now(tz).date() + timedelta(days=1))
@@ -307,20 +286,21 @@ def make_plan(brand: Brand, start: date | None = None, client: anthropic.Anthrop
     end = slots[-1].when.date()
     festivals = calendar_india.upcoming(start, end, (brand.config.get("festivals") or {}).get("custom_dates"))
 
-    key = brand.secret("ANTHROPIC_API_KEY")
-    if not key and client is None:
-        raise PlanError("Claude isn't connected yet. Go to Connect accounts → Claude.")
-    client = client or anthropic.Anthropic(api_key=key, timeout=300)
+    try:
+        client = client or claude.client_for(brand)
+    except claude.ClaudeError as e:
+        raise PlanError(str(e)) from None
 
     messages = [{"role": "user", "content": user_prompt(
         brand, styles, slots, themes, formats, reel_cap, festivals, performance_summary(brand), recent_ideas(brand))}]
     styles_by_id = {s["id"]: s for s in styles}
-    cost, model_used, plan = 0.0, MODEL, None
+    cost, model_used, plan = 0.0, claude.MODEL, None
     for attempt in range(2):
-        response = _ask_claude(client, brand, messages, plan_schema(styles, slots))
-        cost += _cost(response.usage)
-        model_used = response.model
-        plan = json.loads(next(b.text for b in response.content if b.type == "text"))
+        try:
+            plan, call_cost, model_used = claude.ask(client, system_prompt(brand), messages, plan_schema(styles, slots))
+        except claude.ClaudeError as e:
+            raise PlanError(str(e)) from None
+        cost += call_cost
         problem = _structure_problem(plan, slots)
         if not problem:
             break
@@ -336,36 +316,6 @@ def make_plan(brand: Brand, start: date | None = None, client: anthropic.Anthrop
     return {"summary": plan["summary"], "rows": rows, "cost_usd": cost, "model": model_used}
 
 
-def _ask_claude(client, brand: Brand, messages: list, schema: dict):
-    try:
-        response = client.beta.messages.create(
-            model=MODEL,
-            max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",  # if a safety check declines, Anthropic retries on a suitable model
-            output_config={"effort": "high", "format": {"type": "json_schema", "schema": schema}},
-            system=[{"type": "text", "text": system_prompt(brand), "cache_control": {"type": "ephemeral"}}],
-            messages=messages,
-        )
-    except anthropic.AuthenticationError:
-        raise PlanError("Claude says the API key is wrong. Paste it again on Connect accounts → Claude.") from None
-    except anthropic.PermissionDeniedError:
-        raise PlanError("Claude refused the key — check billing/credit at console.anthropic.com.") from None
-    except anthropic.RateLimitError:
-        raise PlanError("Claude is busy (rate limit). Try again in a minute.") from None
-    except anthropic.APIStatusError as e:
-        if "credit" in str(e.message).lower():
-            raise PlanError("Your Claude account is out of credit. Add credit at console.anthropic.com → Billing.") from None
-        raise PlanError(f"Claude replied with an error ({e.status_code}). Try again shortly.") from None
-    except anthropic.APIConnectionError:
-        raise PlanError("Couldn't reach Claude. Check your internet connection.") from None
-    if response.stop_reason == "refusal":
-        raise PlanError("Claude declined to make this plan. Check the brand rules for anything unusual and try again.")
-    if response.stop_reason == "max_tokens":
-        raise PlanError("The plan came back cut off. Try again, or plan 1 week instead of 2.")
-    return response
-
-
 def _structure_problem(plan: dict, slots: list[Slot]) -> str | None:
     used = [p["slot"] for p in plan.get("posts", [])]
     missing = sorted({s.index for s in slots} - set(used))
@@ -377,14 +327,6 @@ def _structure_problem(plan: dict, slots: list[Slot]) -> str | None:
     if any(not p["styles"] for p in plan["posts"]):
         return "a post has no product style"
     return None
-
-
-def _cost(usage) -> float:
-    def n(name):
-        return getattr(usage, name, 0) or 0
-    p = PRICE_PER_MTOK
-    return (n("input_tokens") * p["input"] + n("output_tokens") * p["output"]
-            + n("cache_creation_input_tokens") * p["cache_write"] + n("cache_read_input_tokens") * p["cache_read"]) / 1e6
 
 
 def _save(brand: Brand, plan: dict, slots: list[Slot], styles_by_id: dict, start: date, reel_cap: int) -> list[dict]:

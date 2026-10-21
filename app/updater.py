@@ -30,7 +30,10 @@ API = "https://api.github.com"
 VERSION_FILE = DATA_DIR / "version.json"
 RESTART_EXIT_CODE = 3  # the start file sees this and starts the agent again
 
-NEVER_TOUCH = {".env", ".venv", "data", "logs", "media", ".git"}
+NEVER_TOUCH = {".env", ".venv", "data", "logs", "media", ".git",
+               # The start file is still running while the update happens; Windows and Mac read it line by line,
+               # so changing it mid-run makes them run garbage. Start files stay as installed.
+               "start-windows.bat", "start-mac.command"}
 KEEP_EXISTING = {"brands"}  # only add new files here, never overwrite
 
 

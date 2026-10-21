@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Drafts{% endblock %}
+{% block body %}
+<div class="row-head">
+  <div><h1>Drafts</h1>
+    <p class="muted">Ready-made posts waiting for your decision. They also arrive in Telegram with the same buttons.
+      Nothing is posted until you approve it.</p></div>
+  <form method="post" action="{{ url_for('run_action', action='drafts') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('drafts_page') }}">
+    <button type="submit" data-busy="Starting…" {% if jobs.get('drafts', {}).get('state') == 'running' %}disabled{% endif %}>Create drafts now</button>
+  </form>
+</div>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+{% for key in ["drafts", "image", "regen"] %}{% if jobs.get(key, {}).get('state') == 'done' %}<div class="flash ok">✅ {{ jobs[key].message }}</div>{% endif %}{% endfor %}
+
+<section class="card">
+  {% for d in drafts %}
+  <div class="draft" id="d{{ d.id }}">
+    <div class="shots">{% for f in d.files %}<img src="{{ url_for('draft_media', draft_id=d.id, n=loop.index) }}?v={{ d.attempt }}" alt="Draft {{ d.id }} image {{ loop.index }}" loading="lazy">{% endfor %}</div>
+    <div>
+      <div class="row-head"><b>Draft #{{ d.id }} · {{ d.when.strftime("%a %d %b, %I:%M %p") if d.when else "not scheduled" }}</b>
+        <span class="pill {{ 'ok' if d.status == 'approved' else ('err' if d.status == 'rejected' else 'soon') }}">{{ d.status }}</span></div>
+      <div class="meta"><span class="pill soon">{{ d.format_label }}</span><span class="pill soon">{{ (d.theme or '')|title }}</span>
+        {% if d.image_style and d.image_style != "template" %}<span class="pill soon">{{ d.image_style.replace('_', ' ') }}</span>{% endif %}</div>
+      {% for p in d.products[:1] %}<div>🛍 {{ p.title }}{% if p.pack_size %} ({{ p.pack_size }}-pc){% endif %} — <b>{{ price_text(p) }}</b></div>{% endfor %}
+      {% for w in d.warnings %}<div class="warn-line">⚠️ {{ w }}</div>{% endfor %}
+      <details><summary>Caption</summary>
+        <form method="post" action="{{ url_for('draft_decision', draft_id=d.id, decision='edit_caption') }}">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <textarea name="caption" rows="8">{{ d.caption }}</textarea>
+          <div class="actions"><button type="submit" class="secondary">Save caption</button></div>
+        </form>
+      </details>
+      <div class="muted" style="margin-top:6px">Cost about US${{ '%.2f' % d.cost_usd }}{% if d.attempt > 1 %} · version {{ d.attempt }}{% endif %}</div>
+      {% if d.status in ("pending", "rejected") %}
+      <div class="actions">
+        {% for decision, label, cls in [("approve", "✅ Approve", ""), ("regenerate", "🔁 Regenerate", "secondary"), ("reject", "❌ Reject", "secondary")] %}
+          {% if not (d.status == "rejected" and decision != "regenerate") %}
+          <form method="post" action="{{ url_for('draft_decision', draft_id=d.id, decision=decision) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <button type="submit" class="{{ cls }}">{{ label }}</button>
+          </form>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No drafts yet. Make a plan first, then press <b>Create drafts now</b> (or send /generate in Telegram).
+    Drafts are also made automatically every morning at 7:30 for posts due in the next 2 days.</p>
+  {% endfor %}
+</section>
+{% endblock %}

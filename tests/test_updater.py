@@ -83,3 +83,10 @@ def test_update_refuses_while_busy(monkeypatch):
     monkeypatch.setattr(jobs, "_running", {("skipperpacks", "plan")})
     with pytest.raises(updater.UpdateError, match="busy"):
         jobs.update("skipperpacks")
+
+
+def test_running_start_files_are_never_replaced(install, monkeypatch):
+    (install / "start-windows.bat").write_text("old bat")
+    _fake_github(monkeypatch, _zip({"run.py": "new run", "start-windows.bat": "new bat"}))
+    updater.apply_update()
+    assert (install / "start-windows.bat").read_text() == "old bat"

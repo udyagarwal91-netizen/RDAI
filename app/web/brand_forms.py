@@ -170,6 +170,30 @@ def festivals(form) -> dict:
     return {"festivals.custom_dates": items}
 
 
+AI_STYLES = {"product_only": "Product only (flat-lays, packs, props)",
+             "dressed_model": "Model in everyday clothes, pack nearby",
+             "website_model": "Model wearing the product, like your website photos"}
+AI_MODELS = {"gemini-nano-banana-2.1": "Nano Banana 2.1 — recommended (about ₹4 per image)",
+             "gemini-3-pro-image": "Gemini 3 Pro Image — premium (about ₹11 per image)"}
+AI_SIZES = {"1K": "Standard (cheaper)", "2K": "High (recommended)"}
+
+
+def ai_images(form) -> dict:
+    styles = [s for s in AI_STYLES if form.get(f"style_{s}")]
+    if not styles:
+        raise BrandConfigError("Tick at least one AI image style.")
+    model = form.get("model")
+    size = form.get("image_size")
+    if model not in AI_MODELS or size not in AI_SIZES:
+        raise BrandConfigError("Pick an AI image model and quality.")
+    return {
+        "ai_images.allowed_styles": styles,
+        "ai_images.model": model,
+        "ai_images.image_size": size,
+        "style.cta_short": _text(form, "cta_short", "Text at the bottom of images", max_len=60),
+    }
+
+
 def approval(form) -> dict:
     return {"auto_publish": form.get("auto_publish") == "on"}
 
@@ -182,5 +206,6 @@ SECTIONS = {
     "voice": voice,
     "safety": safety,
     "festivals": festivals,
+    "ai": ai_images,
     "approval": approval,
 }

@@ -24,7 +24,7 @@ from app import secrets_store
 secrets_store.load_env()  # must happen before anything reads a key
 
 from app.brands import BrandConfigError, list_brands, load_brand  # noqa: E402
-from app import jobs, telegram  # noqa: E402
+from app import jobs, renderer, telegram  # noqa: E402
 from app.db import DB_PATH, init_db  # noqa: E402
 from app.logging_setup import setup_logging  # noqa: E402
 from app.web import create_app  # noqa: E402
@@ -61,6 +61,7 @@ def main() -> None:
         except BrandConfigError as e:
             log.error("Brand problem: %s", e)
 
+    renderer.start_browser_install()  # first run: downloads the picture maker in the background
     jobs.start_scheduler()
     for slug in brands:
         telegram.Bot(lambda slug=slug: load_brand(slug)).start()

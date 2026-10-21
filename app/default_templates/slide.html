@@ -1,0 +1,43 @@
+{#- Carousel slide. kind = cover (photo + headline), info (text), or end (price + call to action). -#}
+{% extends "_base.html" %}
+{% block style %}
+  .num { font-size: 26px; font-weight: 600; color: var(--primary); opacity: .7; }
+  .cover .card { flex: 1; margin: 32px 0; }
+  .cover h1 { font-size: 76px; line-height: 1.02; color: var(--primary); font-weight: 800; }
+  .info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .info h2 { font-size: 80px; line-height: 1.04; color: var(--primary); font-weight: 800; }
+  .info p { font-size: 40px; line-height: 1.35; margin-top: 34px; max-width: 900px; }
+  .info .bar { width: 120px; height: 12px; background: var(--accent); border-radius: 6px; margin-bottom: 40px; }
+  .end { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  .end .card { height: 640px; }
+  .end h2 { font-size: 64px; line-height: 1.05; color: var(--primary); font-weight: 800; margin-bottom: 30px; }
+  .end p { font-size: 34px; margin-bottom: 36px; }
+{% endblock %}
+{% block body %}
+  <div class="top">
+    <div class="logo">{% if logo %}<img src="{{ logo }}">{% else %}<span>{{ brand_name }}</span>{% endif %}</div>
+    <div class="num">{{ index }}/{{ total }}</div>
+  </div>
+  {% if kind == "cover" %}
+    <div class="cover" style="display:flex; flex-direction:column; flex:1">
+      <div class="card"><img src="{{ photo }}"></div>
+      <h1>{{ headline }}</h1>
+    </div>
+  {% elif kind == "end" %}
+    <div class="end">
+      <div class="card"><img src="{{ photo }}"></div>
+      <div>
+        <h2>{{ headline }}</h2>
+        {% if body %}<p>{{ body }}</p>{% endif %}
+        {% if price %}<div class="price">{{ price }}{% if mrp %} <s>{{ mrp }}</s>{% endif %}</div>{% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="info">
+      <div class="bar"></div>
+      <h2>{{ headline }}</h2>
+      {% if body %}<p>{{ body }}</p>{% endif %}
+    </div>
+  {% endif %}
+  <div class="foot"><span>{{ cta if kind == "end" else "Swipe →" if index < total else "" }}</span><span>{{ website }}</span></div>
+{% endblock %}

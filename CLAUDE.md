@@ -10,16 +10,18 @@ Shopify products → weekly plan (Claude) → images/reels (HTML templates via P
 The owner is not a coder: user-facing text, docs and error messages must be plain English with exact click paths.
 
 Build roadmap (one phase at a time, confirm with the owner after each): 0 setup ✅ → 1 Shopify sync + weekly plan
-on Telegram ✅ (awaiting owner's live test) → 2 captions/images/carousels/Gemini images + QC + approval → 2b Veo reels → 3 publishing → 4 insights
+on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval ✅ (awaiting owner's live test) → 2b Veo reels → 3 publishing → 4 insights
 → 5 extras. The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
-(deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week.
+(deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week, AI images may mix
+product-only / dressed-model / website-style model shots (owner chose a mix; brand form can restrict).
+Veo 3.1 preview models shut down 2026-10-22 — Phase 2b must use the replacement (`gemini-omni-1.1-flash`, verify docs).
 
 ## Commands
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run.py                     # Control Center at http://localhost:8000 (NO_BROWSER=1 to skip opening a browser)
-.venv/bin/python -m pytest -q               # all tests
+.venv/bin/python -m pytest -q               # all tests (CHROMIUM_PATH=/path/to/chrome also runs the real render test)
 .venv/bin/python -m pytest -q tests/test_phase0.py::test_mask   # single test
 ```
 
@@ -38,7 +40,7 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   `output_config.format` (enums constrain slot/style ids) and a cached system prompt; retries once if slots are
   missing; `check_post` flags ₹ amounts not in Shopify, % discounts, banned and needs-proof words. A new plan
   replaces only `status='planned'` rows from its first slot on.
-- `app/jobs.py` — the single place actions live (`sync`, `plan`, `send_plan`); used by Control Center buttons
+- `app/jobs.py` — the single place actions live (`sync`, `plan`, `send_plan`, `update`, `drafts`, `image`, `regen`); used by Control Center buttons
   (background threads, status in `app_state` `job:<action>`) and the timer (weekly plan, daily 06:15 sync).
 - `app/telegram.py` — HTML messages split under 4096 chars; `Bot` long-polls `getUpdates` and ignores every chat
   except `TELEGRAM_CHAT_ID` (it idles until that is set, so the Settings test can still discover the chat ID).
@@ -47,6 +49,23 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   only NEW files are added. Then `os._exit(3)`; the start scripts loop on exit code 3 to restart.
   **Consequence: existing brand `config.yaml` files are never upgraded — any new config key must be read with a
   default (`.get(..., default)`) and should get a Control Center form.**
+- Phase 2 pipeline (`producer.make_draft`): `writer.write` (Claude, sees up to 4 product photos by URL, returns
+  caption/hashtags/headline/subline/photo_index/image_style/scene/slides; `factcheck.check_text` → one rewrite with
+  feedback) → `make_visuals` (`renderer.render` HTML templates via Playwright for template_image/carousel —
+  prices on images come from Shopify via `planner.price_text`, never from the AI; or `gemini.generate_image` with the
+  real product photo as reference, then `media.to_jpeg` 1080×1350 + logo stamp) → `checker.check` (Claude vision;
+  on failure one automatic fix: remake AI image with the problems, or rewrite caption + re-render) → saved under
+  `DATA_DIR/media/<brand>/drafts/<id>/`. Reel slots become AI images until Phase 2b.
+- `app/gemini.py` — Interactions API (`POST v1beta/interactions`, `response_format` with aspect_ratio/image_size),
+  default `gemini-nano-banana-2.1`; image is read only from `model_output` steps (the answer can echo our input).
+- `app/claude.py` — shared `ask()` (structured JSON output, `fallbacks="default"`, cached system prompt, plain-English
+  `ClaudeError`, cost). Planner, writer and checker all use it; tests swap `claude.client_for`.
+- Approval: Telegram `send_draft` (photo or album, then caption message with ✅🔁✏️❌ `callback_data` `a|r|e|x:<id>`);
+  `Bot.handle_button` only accepts the owner's chat; ✏️ sets `app_state awaiting_caption`; decisions go through
+  `producer.decide` (→ `approvals` table). Same actions on the Control Center Drafts page.
+- Timer: drafts daily 07:30 for posts due within 2 days (`jobs.drafts(days=2)`).
+- Updater never replaces `start-windows.bat` / `start-mac.command` (they are running during the update). Anything new
+  needed at start-up must be done from Python (e.g. `renderer.start_browser_install`).
 - `app/calendar_india.py` — only high-confidence festival dates (lunar ones marked approx) + owner's custom dates.
 - `app/secrets_store.py` — the only code that reads/writes keys. `.env` is loaded with `override=False`, so host
   env vars (Railway/Render) win. `save()` rewrites one line atomically and updates `os.environ` live.

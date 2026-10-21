@@ -5,7 +5,8 @@ Instagram + Facebook posts, makes the images/reels, sends each draft to you on
 Telegram for ✅ approval, posts the approved ones on time, and learns from
 what performed well.
 
-**Status:** Phase 0 (setup) and Phase 1 (products + weekly plan) are built. Run it, connect your
+**Status:** Phases 0–2 are built: setup, products + weekly plan, and drafts (captions, brand images, carousels,
+AI images) with quality checks and Telegram approval buttons. Run it, connect your
 accounts, then press **Get products from Shopify** and **Make this week's plan** — or let the timer
 do it every week.
 
@@ -17,6 +18,7 @@ Double-click the start file and it opens in your browser:
 |------|-------------------|
 | **Home** | See what's done, the one next step, and the action buttons (they switch on as each phase is built) |
 | **Plan** | This week's planned posts with product photo, Shopify price, idea and hook; ⚠️ marks anything to check |
+| **Drafts** | Finished posts waiting for you: pictures, caption, ⚠️ checks, Approve / Regenerate / Reject |
 | **Products** | Everything the agent knows from Shopify, grouped by style, plus any price mistakes found in your store |
 | **Connect accounts** | Step-by-step help for Telegram, Claude, Gemini, Shopify, Instagram/Facebook — paste, press **Save & test** |
 | **Brand** | Store address, posting days/times, content mix, colours, logo upload, voice, hashtags, banned words, approval mode, brand rules |
@@ -76,7 +78,14 @@ RDAI/
 │   ├── shopify.py          ← reads products, prices, sizes, stock (read-only)
 │   ├── planner.py          ← builds the weekly plan with Claude and checks it against Shopify
 │   ├── calendar_india.py   ← festivals and sale days the planner uses
-│   ├── telegram.py         ← sends you messages; answers /plan
+│   ├── writer.py           ← writes captions, hashtags and the picture brief (Claude)
+│   ├── renderer.py         ← turns design templates into post images
+│   ├── gemini.py           ← AI images from the real product photo
+│   ├── checker.py          ← final quality check of pictures and caption
+│   ├── producer.py         ← makes a finished draft: words → pictures → check → save
+│   ├── factcheck.py        ← checks prices and pack sizes in any text against Shopify
+│   ├── default_templates/  ← the post and carousel designs
+│   ├── telegram.py         ← sends you plans and drafts; handles buttons and commands
 │   ├── jobs.py             ← runs actions in the background + the weekly timer
 │   ├── brand_editor.py     ← saves Brand-page changes into config.yaml safely
 │   ├── status.py           ← remembers which connections passed

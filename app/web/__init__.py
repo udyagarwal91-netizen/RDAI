@@ -25,7 +25,7 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
                    url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import LOGS_DIR, brand_editor, jobs, planner, secrets_store, status, updater
+from app import DATA_DIR, LOGS_DIR, brand_editor, jobs, planner, producer, secrets_store, status, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
 from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
@@ -38,7 +38,7 @@ MAX_FAILED_LOGINS = 5
 LOCKOUT_SECONDS = 300
 _failed_logins: list[float] = []
 
-CURRENT_PHASE = 1  # raise as each phase ships; tiles at or below it become live buttons
+CURRENT_PHASE = 2  # raise as each phase ships; tiles at or below it become live buttons
 
 # Buttons for work the agent will do. Each turns on when its phase is built.
 ACTIONS = [
@@ -46,7 +46,7 @@ ACTIONS = [
     ("plan", "Make this week's plan", "Claude plans the week and sends it to your Telegram.", 1),
     ("drafts", "Create drafts now", "Makes the next posts and sends them to Telegram for approval.", 2),
     ("image", "Make one AI image", "Pick a product; Gemini makes a lifestyle image of it.", 2),
-    ("reel", "Make one reel", "Pick a product; Veo makes a short vertical video.", 2),
+    ("reel", "Make one reel", "Pick a product; Google's video AI makes a short vertical video.", 2.5),
     ("queue", "See scheduled posts", "Everything approved and waiting to go out.", 3),
     ("pause", "Pause all posting", "Stops posting until you press Resume.", 3),
     ("stats", "Last 7 days performance", "Reach, saves, shares and clicks per post.", 4),
@@ -181,6 +181,7 @@ def create_app() -> Flask:
                                next_service=next_service, actions=ACTIONS, current_phase=CURRENT_PHASE,
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()),
                                last_sync=last_sync, plan_count=len(plan_rows),
+                               styles=planner.catalog_styles(brand) if brand else [],
                                version=updater.installed(), has_github=bool(secrets_store.get("GITHUB_TOKEN")),
                                next_plan=jobs.next_plan_time(slug) if slug else None)
 
@@ -190,11 +191,17 @@ def create_app() -> Flask:
         if action not in jobs.ACTIONS:
             abort(404)
         slug = current_brand_slug()
-        if jobs.start(slug, action):
+        kwargs = {}
+        if action == "image":
+            kwargs = {"style_id": request.form.get("style_id", ""), "note": request.form.get("note", "")[:300]}
+        elif action == "regen":
+            kwargs = {"draft_id": int(request.form.get("draft_id", "0") or 0)}
+        if jobs.start(slug, action, **kwargs):
             flash("Started — this page updates by itself when it's done.", "ok")
         else:
             flash("That's already running. Give it a moment.", "warn")
-        return redirect(request.form.get("back") or url_for("home"))
+        back = request.form.get("back") or ""
+        return redirect(back if back.startswith("/") and not back.startswith("//") else url_for("home"))
 
     @app.route("/updates/check", methods=["POST"])
     @login_required
@@ -238,6 +245,54 @@ def create_app() -> Flask:
                                styles=planner.catalog_styles(brand) if brand else [],
                                last_sync=json.loads(get_state(slug, "last_sync") or "null") if slug else None,
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    @app.route("/drafts")
+    @login_required
+    def drafts_page():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        job_status = jobs.status(slug) if slug else {}
+        return render_template("drafts.html", brand=brand, brand_error=brand_error,
+                               drafts=producer.recent_drafts(brand) if brand else [], price_text=planner.price_text,
+                               jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    @app.route("/drafts/<int:draft_id>/<decision>", methods=["POST"])
+    @login_required
+    def draft_decision(draft_id, decision):
+        slug = current_brand_slug()
+        brand, error = _load(slug)
+        d = producer.get_draft(brand, draft_id) if brand else None
+        if not d:
+            abort(404)
+        if decision in ("approve", "reject") and d["status"] == "pending":
+            producer.decide(brand, draft_id, decision)
+            flash(f"Draft #{draft_id} {'approved' if decision == 'approve' else 'rejected'}.", "ok")
+        elif decision == "regenerate" and d["status"] in ("pending", "rejected"):
+            producer.decide(brand, draft_id, "regenerate")
+            if jobs.start(slug, "regen", draft_id=draft_id):
+                flash(f"Making a new version of draft #{draft_id} — it will also arrive in Telegram.", "ok")
+            else:
+                flash("Already remaking a draft — try again in a minute.", "warn")
+        elif decision == "edit_caption":
+            caption = request.form.get("caption", "").strip()
+            if caption:
+                producer.decide(brand, draft_id, "edit_caption", caption)
+                flash(f"Caption of draft #{draft_id} saved.", "ok")
+        else:
+            flash(f"Draft #{draft_id} is already {d['status']}.", "warn")
+        return redirect(url_for("drafts_page") + f"#d{draft_id}")
+
+    @app.route("/media/<int:draft_id>/<int:n>")
+    @login_required
+    def draft_media(draft_id, n):
+        brand, _ = _load(current_brand_slug())
+        d = producer.get_draft(brand, draft_id) if brand else None
+        if not d or not 1 <= n <= len(d["files"]) or not d["files"][n - 1].exists():
+            abort(404)
+        path = d["files"][n - 1].resolve()
+        if DATA_DIR.resolve() not in path.parents:
+            abort(404)
+        return send_file(path, mimetype="image/jpeg", max_age=0)
 
     @app.route("/check-all", methods=["POST"])
     @login_required

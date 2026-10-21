@@ -125,6 +125,10 @@ ADDED_COLUMNS = [
     ("products", "issues", "TEXT"),              # JSON list of data mistakes found in Shopify (e.g. ₹0 price)
     ("content_plan", "hook", "TEXT"),            # suggested opening line
     ("content_plan", "notes", "TEXT"),           # why this post, or warnings for the owner
+    ("drafts", "creative", "TEXT"),              # JSON: headline, slides, image style, scene, chosen photo
+    ("drafts", "image_style", "TEXT"),           # product_only / dressed_model / website_model / template
+    ("drafts", "theme", "TEXT"),
+    ("drafts", "product_ids", "TEXT"),           # JSON list of shopify_id
 ]
 
 

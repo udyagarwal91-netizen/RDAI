@@ -107,6 +107,13 @@
   .style-card { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
   .style-card img { width:100%; aspect-ratio:1; object-fit:cover; background:#fff; display:block; }
   .style-card .body { padding:10px 12px; font-size:14px; }
+  .draft { display:grid; grid-template-columns:minmax(0, 360px) 1fr; gap:18px; padding:18px 0; border-top:1px solid var(--line); }
+  .draft:first-child { border-top:0; }
+  @media (max-width:700px) { .draft { grid-template-columns:1fr; } }
+  .shots { display:flex; gap:8px; overflow-x:auto; scroll-snap-type:x mandatory; }
+  .shots img { width:100%; max-width:360px; aspect-ratio:4/5; object-fit:cover; border-radius:12px;
+               border:1px solid var(--line); scroll-snap-align:start; flex:0 0 auto; }
+  .caption { white-space:pre-wrap; font-size:14px; background:var(--soft); border-radius:10px; padding:10px 12px; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -116,6 +123,7 @@
   <nav>
     <a href="{{ url_for('home') }}" class="{{ 'on' if page == 'home' }}">Home</a>
     <a href="{{ url_for('plan_page') }}" class="{{ 'on' if page == 'plan_page' }}">Plan</a>
+    <a href="{{ url_for('drafts_page') }}" class="{{ 'on' if page == 'drafts_page' }}">Drafts</a>
     <a href="{{ url_for('products_page') }}" class="{{ 'on' if page == 'products_page' }}">Products</a>
     <a href="{{ url_for('connect') }}" class="{{ 'on' if page == 'connect' }}">Connect accounts</a>
     <a href="{{ url_for('brand_page') }}" class="{{ 'on' if page == 'brand_page' }}">Brand</a>

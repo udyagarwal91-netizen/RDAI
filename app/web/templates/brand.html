@@ -12,7 +12,7 @@
 <p class="muted">Everything about how {{ brand.name }} looks, sounds and posts. Each box has its own Save button.</p>
 <div class="toc">
   <a href="#basics">Store &amp; accounts</a><a href="#schedule">Posting days</a><a href="#mix">Content mix</a>
-  <a href="#look">Colours &amp; logo</a><a href="#voice">Voice &amp; hashtags</a><a href="#safety">Banned words</a>
+  <a href="#look">Colours &amp; logo</a><a href="#ai">AI images</a><a href="#voice">Voice &amp; hashtags</a><a href="#safety">Banned words</a>
   <a href="#festivals">Sale days</a><a href="#approval">Approval mode</a><a href="#rules">Brand rules</a>
 </div>
 
@@ -132,6 +132,30 @@
     </form>
     {% endfor %}
   </div>
+</section>
+
+{# ---------- AI images ---------- #}
+{% set ai = c.ai_images or {} %}
+<section class="card" id="ai">
+  <h2>AI images</h2>
+  <p class="muted">Gemini makes these from your real product photo. The agent picks the style that suits each post,
+    from the ones you allow. Every image is checked for accuracy and anything suggestive before you see it.</p>
+  <form method="post" action="{{ url_for('brand_save', section='ai') }}">{{ csrf() }}
+    <h3>Styles the agent may use</h3>
+    {% for key, label in f.AI_STYLES.items() %}
+    <label style="font-weight:400"><input type="checkbox" name="style_{{ key }}"
+      {% if key in (ai.allowed_styles or f.AI_STYLES.keys()|list) %}checked{% endif %}> {{ label }}</label>
+    {% endfor %}
+    <div class="two">
+      <label>Image model
+        <select name="model">{% for key, label in f.AI_MODELS.items() %}<option value="{{ key }}" {% if (ai.model or 'gemini-nano-banana-2.1') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Quality
+        <select name="image_size">{% for key, label in f.AI_SIZES.items() %}<option value="{{ key }}" {% if (ai.image_size or '2K') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    </div>
+    <label>Text at the bottom of brand images
+      <input type="text" name="cta_short" value="{{ c.style.cta_short or 'Shop the pack · link in bio' }}"></label>
+    {{ save() }}
+  </form>
 </section>
 
 {# ---------- Voice ---------- #}

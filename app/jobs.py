@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app import planner, shopify, telegram, updater
+from app import claude, gemini, planner, producer, renderer, shopify, telegram, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.db import get_state, set_state
 
@@ -69,28 +69,107 @@ def update(slug: str) -> str:
     return message
 
 
-ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update}
 FRIENDLY_ERRORS = (shopify.ShopifyError, planner.PlanError, telegram.TelegramError, BrandConfigError,
-                   updater.UpdateError)
+                   updater.UpdateError, producer.DraftError, gemini.GeminiError, claude.ClaudeError,
+                   renderer.RenderError)
+
+
+def drafts(slug: str, days: int = 7) -> str:
+    """Make drafts for planned posts in the next `days` days and send each to Telegram."""
+    brand = load_brand(slug)
+    rows = producer.due_plan_rows(brand, days=days)
+    if not rows:
+        return f"Nothing to draft — no planned posts in the next {days} days without a draft. Make a plan first."
+    made, problems, cost, unsent = 0, [], 0.0, 0
+    for row in rows:
+        try:
+            draft_id = producer.make_draft(brand, row)
+            d = producer.get_draft(brand, draft_id)
+            cost += d["cost_usd"]
+            made += 1
+            try:
+                telegram.send_draft(brand, d)
+            except telegram.TelegramError as e:
+                unsent += 1
+                log.warning("Draft #%d made but not sent to Telegram: %s", draft_id, e)
+        except FRIENDLY_ERRORS as e:
+            when = datetime.fromisoformat(row["scheduled_for"]).strftime("%a %d %b")
+            problems.append(f"{when}: {e}")
+            log.warning("Draft for %s failed: %s", row["scheduled_for"], e)
+    msg = f"Made {made} draft(s)" + (" and sent them to Telegram" if not unsent else
+                                      f" ({unsent} couldn't be sent to Telegram — see the Drafts page)") + \
+          f". Cost about US${cost:.2f}."
+    if problems:
+        msg += f" {len(problems)} couldn't be made — " + " | ".join(problems)
+        _tell(brand, "⚠️ Some drafts couldn't be made:\n" + "\n".join(telegram.esc(p) for p in problems))
+    return msg
+
+
+def image(slug: str, style_id: str, note: str = "") -> str:
+    """One AI image on request (from /image or the Control Center)."""
+    brand = load_brand(slug)
+    try:
+        draft_id = producer.make_draft(brand, on_demand=producer.on_demand_post(brand, style_id, note))
+    except FRIENDLY_ERRORS as e:
+        _tell(brand, f"⚠️ Couldn't make the image: {telegram.esc(e)}")
+        raise
+    d = producer.get_draft(brand, draft_id)
+    sent = _send(brand, d)
+    return f"Made AI image draft #{draft_id}{sent}. Cost about US${d['cost_usd']:.2f}."
+
+
+def regen(slug: str, draft_id: int) -> str:
+    brand = load_brand(slug)
+    try:
+        producer.remake(brand, draft_id)
+    except FRIENDLY_ERRORS as e:
+        producer.decide(brand, draft_id, "regenerate_failed")
+        from app.db import connect
+        with connect() as conn:
+            conn.execute("UPDATE drafts SET status = 'pending' WHERE id = ?", (draft_id,))
+        _tell(brand, f"⚠️ Couldn't remake draft #{draft_id}: {telegram.esc(e)}")
+        raise
+    d = producer.get_draft(brand, draft_id)
+    return f"Remade draft #{draft_id}{_send(brand, d)}."
+
+
+def _send(brand, d) -> str:
+    try:
+        telegram.send_draft(brand, d)
+        return " and sent it to Telegram"
+    except telegram.TelegramError as e:
+        log.warning("Draft #%d not sent to Telegram: %s", d["id"], e)
+        return " (couldn't send it to Telegram — see the Drafts page)"
+
+
+def _tell(brand, text: str) -> None:
+    try:
+        telegram.send_message(brand, text)
+    except telegram.TelegramError:
+        pass
+
+
+ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
+           "drafts": drafts, "image": image, "regen": regen}
 
 
 # ---------------------------------------------------------------- background running
 
-def start(slug: str, action: str) -> bool:
+def start(slug: str, action: str, **kwargs) -> bool:
     """Start an action in the background. False if it's already running."""
     with _lock:
         if (slug, action) in _running:
             return False
         _running.add((slug, action))
     _set(slug, action, "running", "Working…")
-    threading.Thread(target=_run, args=(slug, action), name=f"job-{action}", daemon=True).start()
+    threading.Thread(target=_run, args=(slug, action), kwargs=kwargs, name=f"job-{action}", daemon=True).start()
     return True
 
 
-def _run(slug: str, action: str) -> None:
+def _run(slug: str, action: str, **kwargs) -> None:
     try:
         log.info("Started: %s (%s)", action, slug)
-        message = ACTIONS[action](slug)
+        message = ACTIONS[action](slug, **kwargs)
         _set(slug, action, "done", message)
         log.info("Finished: %s — %s", action, message)
     except FRIENDLY_ERRORS as e:
@@ -151,7 +230,10 @@ def reload_schedule() -> None:
                                               timezone=tz), args=[slug, "plan"], id=f"{slug}:plan")
         _scheduler.add_job(start, CronTrigger(hour=6, minute=15, timezone=tz), args=[slug, "sync"],
                            id=f"{slug}:sync")
-        log.info("Timer set for %s: weekly plan every %s at %s, product sync daily at 06:15",
+        # Every morning, prepare drafts for posts due in the next 2 days, so you have time to approve.
+        _scheduler.add_job(start, CronTrigger(hour=7, minute=30, timezone=tz), args=[slug, "drafts"],
+                           kwargs={"days": 2}, id=f"{slug}:drafts")
+        log.info("Timer set for %s: weekly plan every %s at %s, product sync daily 06:15, drafts daily 07:30",
                  slug, sched.get("plan_day"), sched.get("plan_time"))
 
 

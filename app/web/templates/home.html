@@ -104,12 +104,18 @@
     {% set j = jobs.get(key) %}
     <div class="tile">
       <div class="row-head"><b>{{ title }}</b>
-        {% if not live %}<span class="pill soon">coming in phase {{ phase }}</span>{% endif %}</div>
+        {% if not live %}<span class="pill soon">coming in phase {{ "2b" if phase == 2.5 else phase }}</span>{% endif %}</div>
       <div class="muted">{{ desc }}</div>
       {% if j and j.state == "done" %}<div class="result ok">✅ {{ j.message }} <span class="muted">({{ j.at }})</span></div>{% endif %}
       {% if live %}
       <form method="post" action="{{ url_for('run_action', action=key) }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if key == "image" %}
+        <select name="style_id" required style="margin-bottom:8px" aria-label="Product">
+          {% for s in styles %}<option value="{{ s.id }}">{{ s.title }}</option>{% else %}<option value="">Get products first</option>{% endfor %}
+        </select>
+        <input type="text" name="note" placeholder="Optional idea, e.g. monsoon travel kit" style="margin-bottom:8px">
+        {% endif %}
         <button type="submit" {% if j and j.state == "running" %}disabled{% endif %} data-busy="Starting…">
           {{ "Working…" if j and j.state == "running" else title }}</button>
       </form>
