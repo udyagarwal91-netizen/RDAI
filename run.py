@@ -14,6 +14,8 @@ bot that answers your commands — all in this one always-on program.
 
 import logging
 import os
+import socket
+import sys
 import threading
 import webbrowser
 
@@ -30,7 +32,21 @@ from app.web import create_app  # noqa: E402
 log = logging.getLogger("run")
 
 
+def already_running(port: int) -> bool:
+    """True if something (usually another copy of the agent) is already using the port.
+    Windows lets two programs share a port, and then the OLD one answers the browser."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def main() -> None:
+    port = int(os.environ.get("PORT", 8000))
+    if "PORT" not in os.environ and already_running(port):
+        print("\n" + "=" * 64 + "\n  THE AGENT IS ALREADY RUNNING in another black window.\n"
+              "  Close ALL black windows, then start the agent again from your newest folder.\n"
+              "  (Two copies at once would make duplicate plans and posts.)\n" + "=" * 64 + "\n", flush=True)
+        sys.exit(1)
     setup_logging()
     init_db()
     log.info("Database ready at %s", DB_PATH)
@@ -53,7 +69,6 @@ def main() -> None:
     # Hosts like Railway/Render set PORT, and then the page must be reachable from outside.
     on_host = "PORT" in os.environ
     host = os.environ.get("HOST", "0.0.0.0" if on_host else "127.0.0.1")
-    port = int(os.environ.get("PORT", 8000))
     url = f"http://localhost:{port}"
     log.info("Control Center: %s", url)
     print("\n" + "=" * 64 + f"\n  THE AGENT IS RUNNING.  Open {url} in your browser.\n"
