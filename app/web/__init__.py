@@ -25,7 +25,7 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
                    url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import DATA_DIR, LOGS_DIR, brand_editor, jobs, planner, producer, secrets_store, status, updater
+from app import DATA_DIR, LOGS_DIR, brand_editor, jobs, planner, producer, publisher, secrets_store, status, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
 from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
@@ -38,7 +38,7 @@ MAX_FAILED_LOGINS = 5
 LOCKOUT_SECONDS = 300
 _failed_logins: list[float] = []
 
-CURRENT_PHASE = 2  # raise as each phase ships; tiles at or below it become live buttons
+CURRENT_PHASE = 3  # raise as each phase ships; tiles at or below it become live buttons
 
 # Buttons for work the agent will do. Each turns on when its phase is built.
 ACTIONS = [
@@ -48,7 +48,7 @@ ACTIONS = [
     ("image", "Make one AI image", "Pick a product; Gemini makes a lifestyle image of it.", 2),
     ("reel", "Make one reel", "Pick a product; Google's video AI makes a short vertical video.", 2.5),
     ("queue", "See scheduled posts", "Everything approved and waiting to go out.", 3),
-    ("pause", "Pause all posting", "Stops posting until you press Resume.", 3),
+    ("pause", "Pause / resume posting", "Stops all posting until you resume. Drafts and plans keep working.", 3),
     ("stats", "Last 7 days performance", "Reach, saves, shares and clicks per post.", 4),
 ]
 
@@ -182,6 +182,9 @@ def create_app() -> Flask:
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()),
                                last_sync=last_sync, plan_count=len(plan_rows),
                                styles=planner.catalog_styles(brand) if brand else [],
+                               ready=set(jobs.ACTIONS) | {"queue", "pause"},  # tiles that have something behind them
+                               paused=publisher.is_paused(brand) if brand else False,
+                               queued=sum(len(g["posts"]) for g in publisher.queue(brand)) if brand else 0,
                                version=updater.installed(), has_github=bool(secrets_store.get("GITHUB_TOKEN")),
                                next_plan=jobs.next_plan_time(slug) if slug else None)
 
@@ -243,6 +246,8 @@ def create_app() -> Flask:
         job_status = jobs.status(slug) if slug else {}
         return render_template("products.html", brand=brand, brand_error=brand_error,
                                styles=planner.catalog_styles(brand) if brand else [],
+                               paused=publisher.is_paused(brand) if brand else False,
+                               queued=sum(len(g["posts"]) for g in publisher.queue(brand)) if brand else 0,
                                last_sync=json.loads(get_state(slug, "last_sync") or "null") if slug else None,
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
 
@@ -265,11 +270,13 @@ def create_app() -> Flask:
         if not d:
             abort(404)
         if decision in ("approve", "reject") and d["status"] == "pending":
-            producer.decide(brand, draft_id, decision)
-            flash(f"Draft #{draft_id} {'approved' if decision == 'approve' else 'rejected'}.", "ok")
+            when = producer.decide(brand, draft_id, decision)
+            flash(f"Draft #{draft_id} approved — it will be posted on {when:%a %d %b at %I:%M %p}." if when
+                  else f"Draft #{draft_id} rejected.", "ok")
         elif decision == "regenerate" and d["status"] in ("pending", "rejected"):
-            producer.decide(brand, draft_id, "regenerate")
-            if jobs.start(slug, "regen", draft_id=draft_id):
+            note = request.form.get("note", "").strip()[:500]
+            if jobs.start(slug, "regen", draft_id=draft_id, note=note):
+                producer.decide(brand, draft_id, "regenerate", note or None)
                 flash(f"Making a new version of draft #{draft_id} — it will also arrive in Telegram.", "ok")
             else:
                 flash("Already remaking a draft — try again in a minute.", "warn")
@@ -281,6 +288,35 @@ def create_app() -> Flask:
         else:
             flash(f"Draft #{draft_id} is already {d['status']}.", "warn")
         return redirect(url_for("drafts_page") + f"#d{draft_id}")
+
+    @app.route("/queue")
+    @login_required
+    def queue_page():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        groups = publisher.queue(brand, include_done=True) if brand else []
+        upcoming = [g for g in groups if any(p["status"] != "published" for p in g["posts"])]
+        done = [g for g in groups if all(p["status"] == "published" for p in g["posts"])][:20]
+        upcoming.sort(key=lambda g: g["when"])
+        drafts = {g["draft_id"]: producer.get_draft(brand, g["draft_id"]) for g in groups} if brand else {}
+        return render_template("queue.html", brand=brand, brand_error=brand_error, upcoming=upcoming, done=done,
+                               drafts=drafts, names=publisher.PLATFORM_NAMES,
+                               paused=publisher.is_paused(brand) if brand else False)
+
+    @app.route("/queue/<int:post_id>/<what>", methods=["POST"])
+    @login_required
+    def queue_action(post_id, what):
+        brand, _ = _load(current_brand_slug())
+        if not brand or what not in ("now", "cancel"):
+            abort(404)
+        if what == "now":
+            publisher.retry_now(brand, post_id)
+            flash("It will be posted within a minute" + (" — but posting is paused; press Resume first." if
+                  publisher.is_paused(brand) else "."), "ok")
+        else:
+            publisher.cancel(brand, post_id)
+            flash("Cancelled — that post won't go out.", "ok")
+        return redirect(url_for("queue_page"))
 
     @app.route("/media/<int:draft_id>/<int:n>")
     @login_required

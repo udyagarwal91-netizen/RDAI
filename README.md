@@ -5,8 +5,9 @@ Instagram + Facebook posts, makes the images/reels, sends each draft to you on
 Telegram for ✅ approval, posts the approved ones on time, and learns from
 what performed well.
 
-**Status:** Phases 0–2 are built: setup, products + weekly plan, and drafts (captions, brand images, carousels,
-AI images) with quality checks and Telegram approval buttons. Run it, connect your
+**Status:** Phases 0–3 are built: setup, products + weekly plan, drafts (captions, brand images, carousels,
+AI images) with quality checks and Telegram approval, and automatic posting of approved drafts to Instagram and
+Facebook. Next: reels (2b) and performance learning (4). Run it, connect your
 accounts, then press **Get products from Shopify** and **Make this week's plan** — or let the timer
 do it every week.
 
@@ -19,6 +20,7 @@ Double-click the start file and it opens in your browser:
 | **Home** | See what's done, the one next step, and the action buttons (they switch on as each phase is built) |
 | **Plan** | This week's planned posts with product photo, Shopify price, idea and hook; ⚠️ marks anything to check |
 | **Drafts** | Finished posts waiting for you: pictures, caption, ⚠️ checks, Approve / Regenerate / Reject |
+| **Queue** | Approved posts and when they go out; Post now / cancel; links to what's been posted |
 | **Products** | Everything the agent knows from Shopify, grouped by style, plus any price mistakes found in your store |
 | **Connect accounts** | Step-by-step help for Telegram, Claude, Gemini, Shopify, Instagram/Facebook — paste, press **Save & test** |
 | **Brand** | Store address, posting days/times, content mix, colours, logo upload, voice, hashtags, banned words, approval mode, brand rules |
@@ -85,6 +87,7 @@ RDAI/
 │   ├── producer.py         ← makes a finished draft: words → pictures → check → save
 │   ├── factcheck.py        ← checks prices and pack sizes in any text against Shopify
 │   ├── default_templates/  ← the post and carousel designs
+│   ├── publisher.py        ← posts approved drafts to Instagram + Facebook on time; retries; alerts
 │   ├── telegram.py         ← sends you plans and drafts; handles buttons and commands
 │   ├── jobs.py             ← runs actions in the background + the weekly timer
 │   ├── brand_editor.py     ← saves Brand-page changes into config.yaml safely

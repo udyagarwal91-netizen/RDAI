@@ -100,14 +100,23 @@
   </p>
   <div class="grid">
     {% for key, title, desc, phase in actions %}
-    {% set live = phase <= current_phase %}
+    {% set live = phase <= current_phase and key in ready %}
     {% set j = jobs.get(key) %}
     <div class="tile">
       <div class="row-head"><b>{{ title }}</b>
         {% if not live %}<span class="pill soon">coming in phase {{ "2b" if phase == 2.5 else phase }}</span>{% endif %}</div>
       <div class="muted">{{ desc }}</div>
       {% if j and j.state == "done" %}<div class="result ok">✅ {{ j.message }} <span class="muted">({{ j.at }})</span></div>{% endif %}
-      {% if live %}
+      {% if live and key == "queue" %}
+      <div class="muted">{{ queued }} post(s) waiting.</div>
+      <form><a class="btn" href="{{ url_for('queue_page') }}">See scheduled posts</a></form>
+      {% elif live and key == "pause" %}
+      <div class="{{ 'warn-line' if paused else 'muted' }}">{{ "⏸ Posting is paused." if paused else "▶️ Posting is on." }}</div>
+      <form method="post" action="{{ url_for('run_action', action='resume' if paused else 'pause') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button type="submit" class="{{ '' if paused else 'secondary' }}">{{ "Resume posting" if paused else "Pause all posting" }}</button>
+      </form>
+      {% elif live %}
       <form method="post" action="{{ url_for('run_action', action=key) }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         {% if key == "image" %}

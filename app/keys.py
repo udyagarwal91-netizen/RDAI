@@ -151,8 +151,11 @@ SERVICES: list[Service] = [
             '<b>Full control</b>.',
             '<b>Generate new token</b> → pick the app → expiry <b>Never</b> → tick: '
             '<code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, '
+            '<code>pages_manage_engagement</code>, <code>pages_read_user_engagement</code>, '
             '<code>read_insights</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code>, '
-            '<code>instagram_manage_insights</code>, <code>business_management</code>.',
+            '<code>instagram_manage_insights</code>, <code>business_management</code>, <code>ads_read</code>, '
+            '<code>ads_management</code> (Meta requires the last two for posting to Instagram from a business account; '
+            'the agent never runs ads).',
             'Copy the token (starts with <code>EAA</code>) and paste it below. The test finds your Page and '
             'Instagram account by itself.',
         ],

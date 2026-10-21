@@ -45,6 +45,43 @@ def send_message(brand: Brand, text: str) -> None:
         _call(token, "sendMessage", chat_id=chat_id, text=part, parse_mode="HTML", disable_web_page_preview=True)
 
 
+def send_buttons(brand: Brand, text: str, buttons: list[tuple[str, str]] | None = None) -> None:
+    """A message with a row of buttons (label, callback code)."""
+    if not buttons:
+        send_message(brand, text)
+        return
+    token, chat_id = brand.secret("TELEGRAM_BOT_TOKEN"), brand.secret("TELEGRAM_CHAT_ID")
+    if not (token and chat_id):
+        raise TelegramError("Telegram isn't connected yet (Connect accounts → Telegram).")
+    _call(token, "sendMessage", chat_id=chat_id, text=text[:MAX_LEN], parse_mode="HTML", disable_web_page_preview=True,
+          reply_markup={"inline_keyboard": [[{"text": label, "callback_data": data} for label, data in buttons]]})
+
+
+def notifier(brand: Brand):
+    """A notify(text, buttons) function for the publisher that never crashes it."""
+    def notify(text: str, buttons=None) -> None:
+        try:
+            send_buttons(brand, esc(text), buttons)
+        except TelegramError as e:
+            log.warning("Couldn't send Telegram alert: %s", e)
+    return notify
+
+
+def format_queue(brand: Brand) -> str:
+    from app import publisher
+
+    groups = publisher.queue(brand)
+    head = "⏸ <b>Posting is PAUSED</b> — send /resume to switch it back on.\n\n" if publisher.is_paused(brand) else ""
+    if not groups:
+        return head + "📭 Nothing is waiting to be posted. Approve a draft and it will appear here."
+    lines = [head + "🗓 <b>Waiting to be posted</b>"]
+    icons = {"queued": "⏳", "publishing": "📤", "failed": "❌", "missed": "⏰"}
+    for g in groups:
+        bits = ", ".join(f"{icons.get(p['status'], '')} {publisher.PLATFORM_NAMES[p['platform']]}" for p in g["posts"])
+        lines.append(f"• <b>{g['when']:%a %d %b, %I:%M %p}</b> — draft #{g['draft_id']} ({bits})")
+    return "\n".join(lines)
+
+
 def _split(text: str) -> list[str]:
     parts, current = [], ""
     for block in text.split("\n\n"):
@@ -94,8 +131,9 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
 
 
 HELP = ("<b>Commands</b>\n/plan — this week's plan\n/generate — make drafts for the coming week now\n"
-        "/image <i>product</i> — one AI image, e.g. <code>/image active brief 3</code>\n/help — this list\n\n"
-        "Coming soon: /reel, /queue, /pause, /resume, /stats, /brand")
+        "/image <i>product</i> — one AI image, e.g. <code>/image active brief 3</code>\n"
+        "/queue — what's waiting to be posted\n/pause — stop all posting\n/resume — start posting again\n"
+        "/help — this list\n\nComing soon: /reel, /stats, /brand")
 
 
 # ---------------------------------------------------------------- drafts
@@ -214,12 +252,17 @@ class Bot:
         command = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
         log.info("Telegram %s", f"command: {command}" if command else "message")
 
+        regen_id = get_state(brand.slug, "awaiting_regen")
+        if regen_id and ((text and not command) or command == "/skip"):
+            self._regenerate(brand, int(regen_id), "" if command == "/skip" else text)
+            return
         awaiting = get_state(brand.slug, "awaiting_caption")
         if awaiting and text and not command:
             self._new_caption(brand, int(awaiting), text)
             return
-        if command == "/cancel":
+        if command in ("/cancel", "/skip"):
             set_state(brand.slug, "awaiting_caption", "")
+            set_state(brand.slug, "awaiting_regen", "")
             send_message(brand, "OK, cancelled.")
         elif command == "/plan":
             from app.planner import upcoming_plan
@@ -239,12 +282,54 @@ class Bot:
             started = jobs.start(brand.slug, "image", style_id=style["id"])
             send_message(brand, f"🎨 Making an AI image of <b>{esc(style['title'])}</b> (about a minute)…"
                          if started else "Already making an image — hang on.")
+        elif command == "/queue":
+            send_message(brand, format_queue(brand))
+        elif command in ("/pause", "/resume"):
+            from app import publisher
+            publisher.set_paused(brand, command == "/pause")
+            send_message(brand, "⏸ Posting paused. Nothing will be posted until you send /resume." if command == "/pause"
+                         else "▶️ Posting resumed. Anything overdue goes out within a minute.")
         elif command in ("/start", "/help"):
             send_message(brand, HELP)
-        elif command in ("/reel", "/queue", "/pause", "/resume", "/stats", "/brand"):
+        elif command in ("/reel", "/stats", "/brand"):
             send_message(brand, f"{esc(command)} is coming in a later phase. For now: /plan, /generate, /image")
         elif text:
             send_message(brand, "I didn't understand that. " + HELP)
+
+    def _post_button(self, brand: Brand, q: dict, token: str, action: str, post_id: int) -> None:
+        from app import publisher
+        from app.db import connect
+
+        with connect() as conn:
+            post = conn.execute("SELECT * FROM posts WHERE id = ? AND brand = ?", (post_id, brand.slug)).fetchone()
+        if not post or post["status"] not in ("failed", "missed"):
+            _call(token, "answerCallbackQuery", callback_query_id=q["id"],
+                  text="Already handled." if post else "That post no longer exists.")
+            return
+        _call(token, "answerCallbackQuery", callback_query_id=q["id"])
+        name = publisher.PLATFORM_NAMES[post["platform"]]
+        if action == "p":
+            publisher.retry_now(brand, post_id)
+            send_message(brand, f"📤 Posting draft #{post['draft_id']} to {name} within a minute…")
+        else:
+            publisher.cancel(brand, post_id)
+            send_message(brand, f"OK — draft #{post['draft_id']} won't be posted to {name}.")
+
+    def _regenerate(self, brand: Brand, draft_id: int, note: str) -> None:
+        from app import jobs, producer
+        from app.db import set_state
+
+        set_state(brand.slug, "awaiting_regen", "")
+        d = producer.get_draft(brand, draft_id)
+        if not d or d["status"] != "pending":
+            send_message(brand, f"Draft #{draft_id} is {d['status'] if d else 'gone'} — nothing to remake.")
+            return
+        if not jobs.start(brand.slug, "regen", draft_id=draft_id, note=note[:500]):
+            send_message(brand, "Already remaking a draft — try again in a minute.")
+            return
+        producer.decide(brand, draft_id, "regenerate", note or None)
+        send_message(brand, f"🔁 Making a new version of draft #{draft_id}" + (f" with: <i>{esc(note)}</i>" if note else "")
+                     + " (about a minute)…")
 
     def _new_caption(self, brand: Brand, draft_id: int, text: str) -> None:
         from app import factcheck, producer, writer
@@ -277,6 +362,9 @@ class Bot:
                 str(((q.get("message") or {}).get("chat") or {}).get("id")) != str(chat_id):
             return  # not you — ignore
         action, _, raw_id = (q.get("data") or "").partition(":")
+        if action in ("p", "s"):  # post-level buttons: post now / try again, skip
+            self._post_button(brand, q, token, action, int(raw_id) if raw_id.isdigit() else 0)
+            return
         draft_id = int(raw_id) if raw_id.isdigit() else 0
         d = producer.get_draft(brand, draft_id)
         if not d:
@@ -287,26 +375,30 @@ class Bot:
             return
         _call(token, "answerCallbackQuery", callback_query_id=q["id"])
         msg = q.get("message") or {}
-        if msg.get("message_id") and action in ("a", "r", "x"):
+        if msg.get("message_id") and action in ("a", "x"):
             try:  # remove the buttons so nothing is pressed twice
                 _call(token, "editMessageReplyMarkup", chat_id=chat_id, message_id=msg["message_id"],
                       reply_markup={"inline_keyboard": []})
             except TelegramError:
                 pass
-        when = d["when"].strftime("%a %d %b, %I:%M %p") if d["when"] else "when you schedule it"
         if action == "a":
-            producer.decide(brand, draft_id, "approve")
-            send_message(brand, f"✅ Draft #{draft_id} approved. It will go out {esc(when)} "
-                                "(automatic posting is switched on in the next phase).")
+            when = producer.decide(brand, draft_id, "approve")
+            from app import publisher
+            paused = " Posting is paused right now — send /resume to switch it back on." if publisher.is_paused(brand) else ""
+            send_message(brand, f"✅ Draft #{draft_id} approved. It will be posted on "
+                                f"{esc(', '.join(publisher.PLATFORM_NAMES[p] for p in publisher.platforms(brand)))} "
+                                f"on {when:%a %d %b at %I:%M %p}.{paused}")
         elif action == "x":
             producer.decide(brand, draft_id, "reject")
             send_message(brand, f"❌ Draft #{draft_id} rejected. It won't be posted.")
         elif action == "r":
-            producer.decide(brand, draft_id, "regenerate")
-            started = jobs.start(brand.slug, "regen", draft_id=draft_id)
-            send_message(brand, f"🔁 Making a new version of draft #{draft_id} (about a minute)…" if started
-                         else "Already remaking a draft — try again in a minute.")
+            set_state(brand.slug, "awaiting_caption", "")
+            set_state(brand.slug, "awaiting_regen", str(draft_id))
+            send_message(brand, f"🔁 What should be different in draft #{draft_id}? Type it as your next message, e.g. "
+                                "<i>gym bag flat-lay, no model, morning light</i> or <i>shorter caption, more Hinglish</i>.\n"
+                                "Or send /skip to just make a fresh version.")
         elif action == "e":
+            set_state(brand.slug, "awaiting_regen", "")
             set_state(brand.slug, "awaiting_caption", str(draft_id))
             send_message(brand, f"✏️ Send me the new caption for draft #{draft_id} as your next message. "
                                 "Hashtags are kept unless you include your own. (/cancel to stop)")

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Queue{% endblock %}
+{% block body %}
+<h1>Posting queue</h1>
+<p class="muted">Approved posts and when they go out. The agent checks every minute while it's running —
+  if your laptop is off at posting time, you'll be asked on Telegram when it's back.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% if paused %}<div class="flash warn">⏸ Posting is paused. Nothing goes out until you press <b>Resume posting</b> on Home (or send /resume).</div>{% endif %}
+
+{% macro row(g) %}
+  {% set d = drafts.get(g.draft_id) %}
+  <div class="plan-item">
+    {% if d and d.files %}<img class="thumb" src="{{ url_for('draft_media', draft_id=g.draft_id, n=1) }}?v={{ d.attempt }}" alt="Draft {{ g.draft_id }}">
+    {% else %}<div class="thumb empty">no picture</div>{% endif %}
+    <div>
+      <b>{{ g.when.strftime("%a %d %b, %I:%M %p") }}</b> · draft #{{ g.draft_id }}{% if d %} · {{ d.format_label }}{% endif %}
+      {% for p in g.posts %}
+      <div class="row-head" style="margin-top:6px">
+        <div>{{ names[p.platform] }}:
+          {% if p.status == "published" %}✅ posted{% if p.permalink %} — <a href="{{ p.permalink }}" target="_blank" rel="noopener">view</a>{% endif %}
+          {% elif p.status == "queued" %}⏳ waiting{% if p.attempts %} (retry {{ p.attempts + 1 }}){% endif %}
+          {% elif p.status == "publishing" %}📤 posting now…
+          {% elif p.status == "failed" %}<span class="warn-line">❌ failed</span>
+          {% elif p.status == "missed" %}<span class="warn-line">⏰ missed (agent was off)</span>{% endif %}
+          {% if p.last_error and p.status != "published" %}<div class="muted">{{ p.last_error }}</div>{% endif %}
+        </div>
+        {% if p.status in ("queued", "failed", "missed") %}
+        <div class="actions" style="margin-top:0">
+          <form method="post" action="{{ url_for('queue_action', post_id=p.id, what='now') }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" class="secondary">Post now</button></form>
+          <form method="post" action="{{ url_for('queue_action', post_id=p.id, what='cancel') }}" onsubmit="return confirm('Cancel this post?')">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" class="link">cancel</button></form>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endmacro %}
+
+<section class="card">
+  <h2>Coming up</h2>
+  {% for g in upcoming %}{{ row(g) }}{% else %}<p class="muted">Nothing waiting. Approve a draft (Drafts page or Telegram) and it appears here.</p>{% endfor %}
+</section>
+{% if done %}
+<section class="card">
+  <h2>Recently posted</h2>
+  {% for g in done %}{{ row(g) }}{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

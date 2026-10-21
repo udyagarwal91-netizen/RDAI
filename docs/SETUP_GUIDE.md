@@ -146,11 +146,15 @@ every 60 days and posting would silently stop).
    - `pages_show_list`
    - `pages_read_engagement`
    - `pages_manage_posts`
+   - `pages_manage_engagement`
+   - `pages_read_user_engagement`
    - `read_insights`
    - `instagram_basic`
    - `instagram_content_publish`
    - `instagram_manage_insights`
    - `business_management`
+   - `ads_read` and `ads_management` (Meta requires these for posting to Instagram from a business-managed
+     account — the agent never creates or changes ads)
 5. **Generate** → copy the token (long text starting `EAA`). Shown once.
 6. Connect accounts → **Meta token** → paste → **Save & test**.
 

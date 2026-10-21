@@ -122,6 +122,9 @@ The product photos follow, numbered from 0."""}]
     for i, url in enumerate(photos):
         content += [{"type": "text", "text": f"Photo {i}:"},
                     {"type": "image", "source": {"type": "url", "url": media.sized_url(url, 600)}}]
+    if post.get("owner_note"):
+        content.append({"type": "text", "text": "The owner asked for this new version — follow it closely (unless it "
+                        f"breaks the non-negotiable rules), including in the picture brief: {post['owner_note']}"})
     if feedback:
         content.append({"type": "text", "text": f"Your previous version had problems — fix them: {feedback}"})
 

@@ -14,8 +14,9 @@ from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
-from app import claude, gemini, planner, producer, renderer, shopify, telegram, updater
+from app import claude, gemini, planner, producer, publisher, renderer, shopify, telegram, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.db import get_state, set_state
 
@@ -118,10 +119,10 @@ def image(slug: str, style_id: str, note: str = "") -> str:
     return f"Made AI image draft #{draft_id}{sent}. Cost about US${d['cost_usd']:.2f}."
 
 
-def regen(slug: str, draft_id: int) -> str:
+def regen(slug: str, draft_id: int, note: str = "") -> str:
     brand = load_brand(slug)
     try:
-        producer.remake(brand, draft_id)
+        producer.remake(brand, draft_id, note=note)
     except FRIENDLY_ERRORS as e:
         producer.decide(brand, draft_id, "regenerate_failed")
         from app.db import connect
@@ -149,8 +150,28 @@ def _tell(brand, text: str) -> None:
         pass
 
 
+def pause(slug: str) -> str:
+    publisher.set_paused(load_brand(slug), True)
+    return "Posting is paused. Nothing will be posted until you press Resume."
+
+
+def resume(slug: str) -> str:
+    publisher.set_paused(load_brand(slug), False)
+    return "Posting resumed. Anything overdue goes out within a minute."
+
+
+def publish_tick(slug: str) -> None:
+    """Runs every minute: posts whatever is due. Never crashes the timer."""
+    try:
+        brand = load_brand(slug)
+        if brand.secret("META_ACCESS_TOKEN"):
+            publisher.publish_due(brand, telegram.notifier(brand))
+    except Exception:
+        log.exception("Posting check failed")
+
+
 ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
-           "drafts": drafts, "image": image, "regen": regen}
+           "drafts": drafts, "image": image, "regen": regen, "pause": pause, "resume": resume}
 
 
 # ---------------------------------------------------------------- background running
@@ -233,6 +254,9 @@ def reload_schedule() -> None:
         # Every morning, prepare drafts for posts due in the next 2 days, so you have time to approve.
         _scheduler.add_job(start, CronTrigger(hour=7, minute=30, timezone=tz), args=[slug, "drafts"],
                            kwargs={"days": 2}, id=f"{slug}:drafts")
+        # Every minute: post anything that's due.
+        _scheduler.add_job(publish_tick, IntervalTrigger(minutes=1), args=[slug], id=f"{slug}:publish",
+                           max_instances=1, coalesce=True)
         log.info("Timer set for %s: weekly plan every %s at %s, product sync daily 06:15, drafts daily 07:30",
                  slug, sched.get("plan_day"), sched.get("plan_time"))
 

@@ -10,7 +10,7 @@ Shopify products → weekly plan (Claude) → images/reels (HTML templates via P
 The owner is not a coder: user-facing text, docs and error messages must be plain English with exact click paths.
 
 Build roadmap (one phase at a time, confirm with the owner after each): 0 setup ✅ → 1 Shopify sync + weekly plan
-on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval ✅ (awaiting owner's live test) → 2b Veo reels → 3 publishing → 4 insights
+on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval ✅ → 2b Veo reels → 3 publishing ✅ (awaiting owner's live test) → 4 insights
 → 5 extras. The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
 (deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week, AI images may mix
 product-only / dressed-model / website-style model shots (owner chose a mix; brand form can restrict).
@@ -63,6 +63,19 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
 - Approval: Telegram `send_draft` (photo or album, then caption message with ✅🔁✏️❌ `callback_data` `a|r|e|x:<id>`);
   `Bot.handle_button` only accepts the owner's chat; ✏️ sets `app_state awaiting_caption`; decisions go through
   `producer.decide` (→ `approvals` table). Same actions on the Control Center Drafts page.
+- `app/publisher.py` — approving (`producer.decide` approve/auto) calls `queue_draft`: one `posts` row per platform
+  at the draft's time (unscheduled → `next_free_slot`; past → now). `jobs.publish_tick` runs every minute (APScheduler
+  interval) → `publish_due`: skips when paused (`app_state paused`), marks posts >6h late as `missed` and asks on
+  Telegram (📤 Post now `p:<post_id>` / ✖️ Skip `s:<post_id>`), retries failures at +5/+10 min then alerts with
+  🔁 Try again. Instagram needs a public image URL, so pictures are first uploaded to the Page as unpublished photos
+  (`published=false`, URL from the photo's `images` field; cached in `app_state fbphotos:<draft>:<attempt>`) — no
+  extra hosting. Facebook: single photo via `/{page}/photos`, multi via `/{page}/feed` + `attached_media`. Uses a Page
+  token fetched with the System User token. Meta permissions needed are listed in `keys.SERVICES` (meta) and checked by
+  `key_tests._missing_permissions`.
+- Regenerate takes an optional owner note (Telegram 🔁 → `app_state awaiting_regen` → next message or /skip; Drafts
+  page note box) → `producer.remake(note=)` → writer prompt + Gemini `extra_instructions`. Remake keeps the draft's
+  own format.
+- Home tiles go live only when `phase <= CURRENT_PHASE` AND the key has an action (`ready` set) — reel (2.5) stays off.
 - Timer: drafts daily 07:30 for posts due within 2 days (`jobs.drafts(days=2)`).
 - Updater never replaces `start-windows.bat` / `start-mac.command` (they are running during the update). Anything new
   needed at start-up must be done from Python (e.g. `renderer.start_browser_install`).

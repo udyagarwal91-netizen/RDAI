@@ -50,7 +50,7 @@ def _short_cta(brand: Brand) -> str:
 
 
 def make_visuals(brand: Brand, fmt: str, creative: dict, products: list[dict], photos: list[str],
-                 fix: str = "") -> tuple[list[bytes], float, bool]:
+                 fix: str = "", owner_note: str = "") -> tuple[list[bytes], float, bool]:
     """Returns (JPEG images, AI image cost in US$, made_by_ai)."""
     if not photos:
         raise DraftError("This product has no photos in Shopify, so no picture can be made.")
@@ -73,16 +73,18 @@ def make_visuals(brand: Brand, fmt: str, creative: dict, products: list[dict], p
         return renderer.render(brand, "slide.html", pages), 0.0, False
     # gemini_image (and reels, until Phase 2b): AI picture from the real product photo
     image, cost = gemini.generate_image(brand, creative["scene"], creative["image_style"], [photo],
-                                        extra_instructions=fix)
+                                        extra_instructions="; ".join(filter(None, [
+                                            f"The owner asked for: {owner_note}" if owner_note else "", fix])))
     logo_rel = brand.config["style"].get("logo_path")
     logo = brand.folder / logo_rel if logo_rel else None
     return [media.to_jpeg(image, media.FEED_SIZE, logo=logo)], cost, True
 
 
 def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | None = None,
-               replace_draft_id: int | None = None, client=None) -> int:
-    """Make (or remake) one draft. Returns the draft id."""
+               replace_draft_id: int | None = None, owner_note: str = "", client=None) -> int:
+    """Make (or remake) one draft. `owner_note` is what the owner typed for a regenerate. Returns the draft id."""
     post = dict(plan_row or on_demand)
+    post["owner_note"] = owner_note.strip()
     product_ids = json.loads(post.get("product_ids") or "[]")
     products = products_by_ids(brand, product_ids)
     if not products:
@@ -105,7 +107,8 @@ def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | 
     warnings = list(w["warnings"])
 
     # 2. Pictures, 3. quality check, 4. one automatic fix if flagged.
-    images, image_cost, ai_made = make_visuals(brand, post["format"], creative, products, photos)
+    note = post.get("owner_note", "")
+    images, image_cost, ai_made = make_visuals(brand, post["format"], creative, products, photos, owner_note=note)
     cost += image_cost
     ref = photos[min(creative["photo_index"], len(photos) - 1)]
     passed, problems, check_cost = checker.check(brand, images, ref, caption, ai_made, client=client)
@@ -115,14 +118,15 @@ def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | 
         attempts = 2
         fix = "; ".join(problems)
         if ai_made:
-            images, image_cost, _ = make_visuals(brand, post["format"], creative, products, photos, fix=fix)
+            images, image_cost, _ = make_visuals(brand, post["format"], creative, products, photos, fix=fix,
+                                                 owner_note=note)
             cost += image_cost
         else:
             w = writer.write(brand, post, products, client=client, feedback=fix)
             cost += w["cost_usd"]
             creative, caption = w["creative"], w["caption"]
             warnings = list(w["warnings"])
-            images, _, _ = make_visuals(brand, post["format"], creative, products, photos)
+            images, _, _ = make_visuals(brand, post["format"], creative, products, photos, owner_note=note)
         passed, problems, check_cost = checker.check(brand, images, ref, caption, ai_made, client=client)
         cost += check_cost
         if not passed:
@@ -199,8 +203,9 @@ def recent_drafts(brand: Brand, limit: int = 30) -> list[dict]:
     return [get_draft(brand, i) for i in ids]
 
 
-def decide(brand: Brand, draft_id: int, decision: str, note: str | None = None) -> None:
-    """Record approve / reject / edit_caption / regenerate / auto, and update the draft's status."""
+def decide(brand: Brand, draft_id: int, decision: str, note: str | None = None) -> datetime | None:
+    """Record approve / reject / edit_caption / regenerate / auto, and update the draft's status.
+    Approving puts the draft in the posting queue; returns when it will go out."""
     status = {"approve": "approved", "auto": "approved", "reject": "rejected", "regenerate": "regenerating"}.get(decision)
     with connect() as conn:
         conn.execute("INSERT INTO approvals (brand, draft_id, decision, note, decided_at) VALUES (?, ?, ?, ?, ?)",
@@ -210,9 +215,13 @@ def decide(brand: Brand, draft_id: int, decision: str, note: str | None = None) 
         if decision == "edit_caption" and note is not None:
             conn.execute("UPDATE drafts SET caption = ? WHERE id = ? AND brand = ?", (note, draft_id, brand.slug))
     log.info("Draft #%d: %s", draft_id, decision)
+    if status == "approved":
+        from app import publisher
+        return publisher.queue_draft(brand, draft_id)
+    return None
 
 
-def remake(brand: Brand, draft_id: int, client=None) -> int:
+def remake(brand: Brand, draft_id: int, note: str = "", client=None) -> int:
     d = get_draft(brand, draft_id)
     if not d:
         raise DraftError(f"Draft #{draft_id} doesn't exist.")
@@ -221,9 +230,11 @@ def remake(brand: Brand, draft_id: int, client=None) -> int:
         with connect() as conn:
             r = conn.execute("SELECT * FROM content_plan WHERE id = ?", (d["plan_id"],)).fetchone()
         plan_row = dict(r) if r else None
+        if plan_row:
+            plan_row["format"] = d["format"]  # keep what this draft is (e.g. a reel slot made as an AI image)
     on_demand = None if plan_row else {"format": d["format"], "theme": d["theme"], "product_ids": d["product_ids"],
                                        "idea": "A fresh, different take on this product", "hook": ""}
-    return make_draft(brand, plan_row, on_demand=on_demand, replace_draft_id=draft_id, client=client)
+    return make_draft(brand, plan_row, on_demand=on_demand, replace_draft_id=draft_id, owner_note=note, client=client)
 
 
 # ---------------------------------------------------------------- which posts need drafts

@@ -141,7 +141,27 @@ def test_meta(brand: Brand) -> tuple[bool, str]:
                        "connected to this Page.")
     if str(brand.config["meta"].get("instagram_account_id") or "") != ig:
         brand_editor.update_config(brand.slug, {"meta.instagram_account_id": ig})
-    return True, f"Connected to Facebook Page '{page.get('name')}' and its Instagram account. Saved both for you."
+    missing = _missing_permissions(base, token)
+    if missing:
+        return False, (f"Connected to Page '{page.get('name')}' and its Instagram account, but the token is missing: "
+                       f"{', '.join(missing)}. Generate a new token with these ticked (step 5) and paste it again.")
+    return True, f"Connected to Facebook Page '{page.get('name')}' and its Instagram account, with posting permissions."
+
+
+REQUIRED_META_PERMISSIONS = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "instagram_basic",
+                             "instagram_content_publish", "read_insights", "instagram_manage_insights"]
+
+
+def _missing_permissions(base: str, token: str) -> list[str]:
+    """Permissions the posting/insights code needs that the token doesn't have. Empty if Meta won't say."""
+    try:
+        r = requests.get(f"{base}/me/permissions", params={"access_token": token}, timeout=TIMEOUT)
+        granted = {p["permission"] for p in r.json().get("data", []) if p.get("status") == "granted"}
+    except (requests.RequestException, ValueError, KeyError):
+        return []
+    if not granted:
+        return []  # some token types can't list their permissions; don't block on that
+    return [p for p in REQUIRED_META_PERMISSIONS if p not in granted]
 
 
 def test_telegram(brand: Brand) -> tuple[bool, str]:
