@@ -177,7 +177,7 @@ def test_bot_only_answers_owner(brand, monkeypatch):
     assert sent == []
     bot.handle(brand, {"chat": {"id": 12345}, "text": "/help"}, "12345")
     bot.handle(brand, {"chat": {"id": 12345}, "text": "/brand"}, "12345")
-    assert "Commands" in sent[0] and "later phase" in sent[1]
+    assert "Just talk to me" in sent[0] and "I don't know /brand" in sent[1]
 
 
 def test_long_messages_are_split():

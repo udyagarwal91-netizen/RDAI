@@ -30,15 +30,29 @@ def client_for(brand: Brand) -> anthropic.Anthropic:
 def ask(client, system: str, messages: list, schema: dict, effort: str = "high",
         max_tokens: int = 16000) -> tuple[dict, float, str]:
     """Ask Claude; returns (answer as a dict, cost in US$, model that answered)."""
+    response = _create(client, max_tokens=max_tokens, system=system, messages=messages,
+                       output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}})
+    if response.stop_reason == "max_tokens":
+        raise ClaudeError("Claude's answer came back cut off. Try again.")
+    text = next(b.text for b in response.content if b.type == "text")
+    return json.loads(text), cost(response.usage), response.model
+
+
+def chat(client, system: str, messages: list, tools: list, effort: str = "medium", max_tokens: int = 8000):
+    """One step of a conversation where Claude may use the agent's tools (used by the chat assistant).
+    Returns Claude's full response; the caller runs any tools it asks for and calls again."""
+    return _create(client, max_tokens=max_tokens, system=system, messages=messages, tools=tools,
+                   output_config={"effort": effort})
+
+
+def _create(client, system: str, **kwargs):
     try:
         response = client.beta.messages.create(
             model=MODEL,
-            max_tokens=max_tokens,
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",  # if a safety check declines, Anthropic retries on a suitable model
-            output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-            messages=messages,
+            **kwargs,
         )
     except anthropic.AuthenticationError:
         raise ClaudeError("Claude says the API key is wrong. Paste it again on Connect accounts → Claude.") from None
@@ -54,10 +68,7 @@ def ask(client, system: str, messages: list, schema: dict, effort: str = "high",
         raise ClaudeError("Couldn't reach Claude. Check your internet connection.") from None
     if response.stop_reason == "refusal":
         raise ClaudeError("Claude declined this request. Check the brand rules for anything unusual and try again.")
-    if response.stop_reason == "max_tokens":
-        raise ClaudeError("Claude's answer came back cut off. Try again.")
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text), cost(response.usage), response.model
+    return response
 
 
 def cost(usage) -> float:

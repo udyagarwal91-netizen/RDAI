@@ -129,6 +129,7 @@
   <span class="logo">Social Agent</span>
   <nav>
     <a href="{{ url_for('home') }}" class="{{ 'on' if page == 'home' }}">Home</a>
+    <a href="{{ url_for('chat_page') }}" class="{{ 'on' if page == 'chat_page' }}">Chat</a>
     <a href="{{ url_for('plan_page') }}" class="{{ 'on' if page == 'plan_page' }}">Plan</a>
     <a href="{{ url_for('drafts_page') }}" class="{{ 'on' if page == 'drafts_page' }}">Drafts</a>
     <a href="{{ url_for('queue_page') }}" class="{{ 'on' if page == 'queue_page' }}">Queue</a>

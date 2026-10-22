@@ -260,7 +260,7 @@ def check_post(post: dict, styles_by_id: dict, brand: Brand) -> list[str]:
 
 # ---------------------------------------------------------------- main
 
-def make_plan(brand: Brand, start: date | None = None, client=None) -> dict:
+def make_plan(brand: Brand, start: date | None = None, client=None, note: str = "") -> dict:
     """Make and save the plan. Returns {"summary", "rows", "cost_usd", "model"}."""
     tz = ZoneInfo(brand.config["schedule"].get("timezone", "Asia/Kolkata"))
     start = start or (datetime.now(tz).date() + timedelta(days=1))
@@ -281,7 +281,8 @@ def make_plan(brand: Brand, start: date | None = None, client=None) -> dict:
         raise PlanError(str(e)) from None
 
     messages = [{"role": "user", "content": user_prompt(
-        brand, styles, slots, themes, formats, reel_cap, festivals, performance_summary(brand), recent_ideas(brand))}]
+        brand, styles, slots, themes, formats, reel_cap, festivals, performance_summary(brand), recent_ideas(brand))
+        + (f"\n\nThe owner's request for this plan (follow it, within the rules): {note.strip()}" if note.strip() else "")}]
     styles_by_id = {s["id"]: s for s in styles}
     cost, model_used, plan = 0.0, claude.MODEL, None
     for attempt in range(2):

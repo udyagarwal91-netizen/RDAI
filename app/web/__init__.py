@@ -25,8 +25,8 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
                    url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import (DATA_DIR, LOGS_DIR, brand_editor, insights, jobs, planner, producer, publisher, secrets_store,
-                 status, updater)
+from app import (DATA_DIR, LOGS_DIR, assistant, brand_editor, claude, insights, jobs, planner, producer, publisher,
+                 secrets_store, status, updater)
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
 from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
@@ -333,6 +333,31 @@ def create_app() -> Flask:
             publisher.cancel(brand, post_id)
             flash("Cancelled — that post won't go out.", "ok")
         return redirect(url_for("queue_page"))
+
+    @app.route("/chat", methods=["GET", "POST"])
+    @login_required
+    def chat_page():
+        brand, brand_error = _load(current_brand_slug())
+        if request.method == "POST" and brand:
+            text = (request.form.get("message") or "").strip()[:2000]
+            if text:
+                try:
+                    assistant.reply(brand, text)
+                except claude.ClaudeError as e:
+                    flash(str(e), "error")
+            return redirect(url_for("chat_page"))
+        return render_template("chat.html", brand=brand, brand_error=brand_error,
+                               turns=assistant.history(brand) if brand else [],
+                               questions=assistant.open_confirmations(brand) if brand else [])
+
+    @app.route("/chat/confirm/<token>/<answer>", methods=["POST"])
+    @login_required
+    def chat_confirm(token, answer):
+        brand, _ = _load(current_brand_slug())
+        if not brand or answer not in ("yes", "no"):
+            abort(404)
+        flash(assistant.confirm(brand, token, answer == "yes"), "ok")
+        return redirect(url_for("chat_page"))
 
     @app.route("/media/<int:draft_id>/<int:n>")
     @login_required

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Chat{% endblock %}
+{% block body %}
+<h1>Chat with your agent</h1>
+<p class="muted">Tell it what you want in your own words — English or Hinglish. The same chat works on Telegram,
+  where you can also send voice notes. Anything that goes public (approve, post now…) asks you to confirm first.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+<section class="card">
+  {% for t in turns %}
+  <div style="margin:10px 0; {{ 'text-align:right' if t.role == 'owner' }}">
+    <div class="muted" style="font-size:12px">{{ "You" if t.role == "owner" else "Agent" }} · {{ t.at }}</div>
+    <div style="display:inline-block; max-width:85%; padding:9px 13px; border-radius:12px; white-space:pre-wrap; text-align:left;
+                background:{{ 'var(--okbg)' if t.role == 'owner' else 'var(--soft)' }}">{{ t.text }}</div>
+  </div>
+  {% else %}
+  <p class="muted">Try: <i>make a reel of the active brief for this Sunday</i> · <i>what's waiting for my approval?</i> ·
+    <i>how did last week go?</i> · <i>add a Black Friday sale on 2026-11-27</i></p>
+  {% endfor %}
+
+  {% for q in questions %}
+  <div class="flash warn">❓ {{ q.summary }}?
+    <div class="actions">
+      <form method="post" action="{{ url_for('chat_confirm', token=q.token, answer='yes') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">✅ Yes, do it</button></form>
+      <form method="post" action="{{ url_for('chat_confirm', token=q.token, answer='no') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit" class="secondary">❌ No</button></form>
+    </div>
+  </div>
+  {% endfor %}
+
+  <form method="post" action="{{ url_for('chat_page') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Thinking…'">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <textarea name="message" placeholder="Type here…" required autofocus></textarea>
+    <div class="actions"><button type="submit">Send</button></div>
+  </form>
+</section>
+{% endblock %}

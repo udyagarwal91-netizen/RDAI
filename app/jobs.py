@@ -38,7 +38,7 @@ def sync(slug: str) -> str:
     return msg
 
 
-def plan(slug: str) -> str:
+def plan(slug: str, note: str = "") -> str:
     brand = load_brand(slug)
     last = json.loads(get_state(slug, "last_sync") or "{}")
     if not last or datetime.fromisoformat(last["at"]) < datetime.now(timezone.utc) - timedelta(hours=6):
@@ -49,7 +49,7 @@ def plan(slug: str) -> str:
             insights.make_lessons(brand)
         except (publisher.PublishError, claude.ClaudeError) as e:
             log.warning("Couldn't refresh results before planning: %s", e)
-    result = planner.make_plan(brand)
+    result = planner.make_plan(brand, note=note)
     rows = planner.upcoming_plan(brand)
     try:
         telegram.send_message(brand, telegram.format_plan(brand, result["summary"], rows, result["cost_usd"]))

@@ -18,6 +18,7 @@ Double-click the start file and it opens in your browser:
 | Page | What you do there |
 |------|-------------------|
 | **Home** | See what's done, the one next step, and the action buttons (they switch on as each phase is built) |
+| **Chat** | Tell the agent what you want in your own words ("make a reel of the active brief for Sunday"); it asks ✅/❌ before anything goes public |
 | **Plan** | This week's planned posts with product photo, Shopify price, idea and hook; ⚠️ marks anything to check |
 | **Drafts** | Finished posts waiting for you: pictures, caption, ⚠️ checks, Approve / Regenerate / Reject |
 | **Queue** | Approved posts and when they go out; Post now / cancel; links to what's been posted |
@@ -26,6 +27,12 @@ Double-click the start file and it opens in your browser:
 | **Connect accounts** | Step-by-step help for Telegram, Claude, Gemini, Shopify, Instagram/Facebook — paste, press **Save & test** |
 | **Brand** | Store address, posting days/times, content mix, colours, logo upload, voice, hashtags, banned words, approval mode, brand rules |
 | **Activity** | What the agent did each day, newest first |
+
+**Talk to it on Telegram, too:** type or send a **voice note** (English, Hindi or Hinglish) — e.g.
+*"kal ke liye ek reel banao active brief ka"*, *"what's waiting for my approval?"*, *"approve draft 12"*.
+The agent writes down what it heard, does it, and for anything that changes what goes public
+(approve, reject, post now, cancel, resume posting, saving a brand rule) it first asks
+**"Should I…? ✅ Yes / ❌ No"**. The /commands still work as shortcuts.
 
 ---
 

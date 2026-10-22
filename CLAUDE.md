@@ -96,6 +96,16 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   fields for reactions/comments/shares. Metrics Meta rejects are skipped (`_rejected`). `report` groups by
   format/topic/AI style/time; `make_lessons` (Claude, needs ≥3 posts with reach) stores `app_state lessons`;
   `for_planner` is what `planner.performance_summary` returns. Monday 09:05 `jobs.stats` sends the report.
+- Chat (`app/assistant.py`): owner's own words (Telegram text, voice, Control Center Chat page) → manual Claude
+  tool loop (`claude.chat`, effort medium, ≤8 steps, response.content appended as-is) over `TOOLS` that wrap the same
+  actions (`jobs.start`, producer, publisher, insights, brand_editor). Tools in `NEEDS_CONFIRMATION` (approve, reject,
+  post now, cancel, resume, remember_instruction → "Owner's notes" in brand-rules.md) are never run by Claude: they
+  become `app_state pending:<token>` (2h expiry, deleted when answered) → Telegram buttons `k|n:<token>` / web
+  `/chat/confirm/<token>/<yes|no>` → `assistant.confirm`. History: `app_state chat_history` (plain text, last 16 turns).
+  Telegram: unknown non-command text → `Bot.chat`; voice/audio → `download_file` (getFile; URL holds the token, never
+  logged) → `voice.transcribe` (Gemini Interactions `gemini-3.8-flash`, audio input, ≤3 min; config `ai_voice.model`)
+  → echoed "🎙 I heard" → same path (also feeds awaiting_regen/awaiting_caption). `jobs.plan(note=)` /
+  `planner.make_plan(note=)` pass the owner's wishes into the plan prompt.
 - `app/calendar_india.py` — only high-confidence festival dates (lunar ones marked approx) + owner's custom dates.
 - `app/secrets_store.py` — the only code that reads/writes keys. `.env` is loaded with `override=False`, so host
   env vars (Railway/Render) win. `save()` rewrites one line atomically and updates `os.environ` live.

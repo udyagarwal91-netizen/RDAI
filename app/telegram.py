@@ -159,11 +159,31 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
     return "\n\n".join(blocks)
 
 
-HELP = ("<b>Commands</b>\n/plan — this week's plan\n/generate — make drafts for the coming week now\n"
+HELP = ("💬 <b>Just talk to me</b> — type or send a voice note in English, Hindi or Hinglish, e.g. "
+        "<i>make a reel of the active brief for Sunday</i> or <i>kal ke posts dikhao</i>.\n\n<b>Shortcuts</b>\n/plan — this week's plan\n/generate — make drafts for the coming week now\n"
         "/image <i>product</i> — one AI image, e.g. <code>/image active brief 3</code>\n"
         "/queue — what's waiting to be posted\n/pause — stop all posting\n/resume — start posting again\n"
         "/reel <i>product</i> — one AI reel (2–6 min, about ₹70)\n"
-        "/stats — last 7 days performance\n/help — this list\n\nComing soon: /brand (for client brands)")
+        "/stats — last 7 days performance\n/help — this list")
+
+
+def _audio(message: dict) -> dict | None:
+    """The voice note (or audio file) in a message, if any."""
+    return message.get("voice") or message.get("audio")
+
+
+def download_file(token: str, file_id: str, max_bytes: int = 19_000_000) -> bytes:
+    """Fetch a file you sent the bot (e.g. a voice note). The URL contains the bot token, so it's never logged."""
+    info = _call(token, "getFile", file_id=file_id)
+    if (info.get("file_size") or 0) > max_bytes or not info.get("file_path"):
+        raise TelegramError("That file is too big for me to open.")
+    try:
+        r = requests.get(f"https://api.telegram.org/file/bot{token}/{info['file_path']}", timeout=60)
+    except requests.RequestException as e:
+        raise TelegramError(f"Couldn't download it from Telegram ({type(e).__name__}).") from None
+    if r.status_code != 200:
+        raise TelegramError(f"Couldn't download it from Telegram (error {r.status_code}).")
+    return r.content
 
 
 # ---------------------------------------------------------------- drafts
@@ -284,7 +304,11 @@ class Bot:
             return  # not you — ignore
         text = (message.get("text") or "").strip()
         command = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
-        log.info("Telegram %s", f"command: {command}" if command else "message")
+        log.info("Telegram %s", f"command: {command}" if command else "voice note" if _audio(message) else "message")
+        if not text and _audio(message):
+            text = self._hear(brand, _audio(message))
+            if not text:
+                return
 
         regen_id = get_state(brand.slug, "awaiting_regen")
         if regen_id and ((text and not command) or command == "/skip"):
@@ -344,10 +368,46 @@ class Bot:
             send_message(brand, f"🎬 Making a reel of <b>{esc(style['title'])}</b>. This takes 2–6 minutes and costs "
                                 "about ₹70 — I'll send it here when it's ready." if started
                          else "Already making a reel — hang on.")
-        elif command == "/brand":
-            send_message(brand, f"{esc(command)} is coming in a later phase. For now: /plan, /generate, /image")
+        elif command:
+            send_message(brand, f"I don't know {esc(command)}. " + HELP)
         elif text:
-            send_message(brand, "I didn't understand that. " + HELP)
+            self.chat(brand, text)
+
+    def _hear(self, brand: Brand, audio: dict) -> str:
+        """Download a voice note and turn it into text ('' if that failed — the owner has been told why)."""
+        from app import voice
+
+        if (audio.get("duration") or 0) > voice.MAX_SECONDS:
+            send_message(brand, "That voice note is a bit long for me — please keep it under 3 minutes.")
+            return ""
+        token = brand.secret("TELEGRAM_BOT_TOKEN")
+        try:
+            _call(token, "sendChatAction", chat_id=brand.secret("TELEGRAM_CHAT_ID"), action="typing")
+            data = download_file(token, audio["file_id"])
+            text = voice.transcribe(brand, data, audio.get("mime_type") or "audio/ogg")
+        except (TelegramError, voice.VoiceError) as e:
+            send_message(brand, f"🎙 {esc(e)}")
+            return ""
+        send_message(brand, f"🎙 <i>I heard:</i> {esc(text)}")
+        return text
+
+    def chat(self, brand: Brand, text: str) -> None:
+        """Answer a message written (or spoken) in your own words."""
+        from app import assistant, claude
+
+        try:
+            _call(brand.secret("TELEGRAM_BOT_TOKEN"), "sendChatAction", chat_id=brand.secret("TELEGRAM_CHAT_ID"),
+                  action="typing")
+        except TelegramError:
+            pass
+        try:
+            answer = assistant.reply(brand, text)
+        except claude.ClaudeError as e:
+            send_message(brand, f"⚠️ {esc(e)}")
+            return
+        send_message(brand, esc(answer["text"]))
+        for c in answer["confirmations"]:
+            send_buttons(brand, f"❓ {esc(c['summary'])}?", [("✅ Yes, do it", f"k:{c['token']}"), ("❌ No", f"n:{c['token']}")])
 
     def _post_button(self, brand: Brand, q: dict, token: str, action: str, post_id: int) -> None:
         from app import publisher
@@ -406,6 +466,16 @@ class Bot:
 
     # -------- button taps
 
+    @staticmethod
+    def _clear_buttons(token: str, chat_id: str, q: dict) -> None:
+        msg = q.get("message") or {}
+        if msg.get("message_id"):
+            try:  # remove the buttons so nothing is pressed twice
+                _call(token, "editMessageReplyMarkup", chat_id=chat_id, message_id=msg["message_id"],
+                      reply_markup={"inline_keyboard": []})
+            except TelegramError:
+                pass
+
     def handle_button(self, brand: Brand, q: dict, chat_id: str) -> None:
         from app import jobs, producer
         from app.db import set_state
@@ -415,6 +485,12 @@ class Bot:
                 str(((q.get("message") or {}).get("chat") or {}).get("id")) != str(chat_id):
             return  # not you — ignore
         action, _, raw_id = (q.get("data") or "").partition(":")
+        if action in ("k", "n"):  # ✅ / ❌ answers to the chat assistant's "Should I…?" questions
+            from app import assistant
+            _call(token, "answerCallbackQuery", callback_query_id=q["id"])
+            self._clear_buttons(token, chat_id, q)
+            send_message(brand, esc(assistant.confirm(brand, raw_id, action == "k")))
+            return
         if action in ("p", "s"):  # post-level buttons: post now / try again, skip
             self._post_button(brand, q, token, action, int(raw_id) if raw_id.isdigit() else 0)
             return
@@ -427,13 +503,8 @@ class Bot:
             _call(token, "answerCallbackQuery", callback_query_id=q["id"], text=f"Already {d['status']}.")
             return
         _call(token, "answerCallbackQuery", callback_query_id=q["id"])
-        msg = q.get("message") or {}
-        if msg.get("message_id") and action in ("a", "x"):
-            try:  # remove the buttons so nothing is pressed twice
-                _call(token, "editMessageReplyMarkup", chat_id=chat_id, message_id=msg["message_id"],
-                      reply_markup={"inline_keyboard": []})
-            except TelegramError:
-                pass
+        if action in ("a", "x"):
+            self._clear_buttons(token, chat_id, q)
         if action == "a":
             when = producer.decide(brand, draft_id, "approve")
             from app import publisher
