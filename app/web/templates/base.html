@@ -113,6 +113,13 @@
   .shots { display:flex; gap:8px; overflow-x:auto; scroll-snap-type:x mandatory; }
   .shots img { width:100%; max-width:360px; aspect-ratio:4/5; object-fit:cover; border-radius:12px;
                border:1px solid var(--line); scroll-snap-align:start; flex:0 0 auto; }
+  table.stats { width:100%; border-collapse:collapse; font-size:14px; }
+  table.stats th, table.stats td { text-align:right; padding:8px 6px; border-top:1px solid var(--line); white-space:nowrap; }
+  table.stats th:first-child, table.stats td:first-child { text-align:left; white-space:normal; }
+  .scroll { overflow-x:auto; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-top:12px; }
+  .kpi { border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .kpi b { display:block; font-size:24px; }
   .caption { white-space:pre-wrap; font-size:14px; background:var(--soft); border-radius:10px; padding:10px 12px; margin-top:8px; }
 </style>
 </head>
@@ -125,6 +132,7 @@
     <a href="{{ url_for('plan_page') }}" class="{{ 'on' if page == 'plan_page' }}">Plan</a>
     <a href="{{ url_for('drafts_page') }}" class="{{ 'on' if page == 'drafts_page' }}">Drafts</a>
     <a href="{{ url_for('queue_page') }}" class="{{ 'on' if page == 'queue_page' }}">Queue</a>
+    <a href="{{ url_for('performance_page') }}" class="{{ 'on' if page == 'performance_page' }}">Performance</a>
     <a href="{{ url_for('products_page') }}" class="{{ 'on' if page == 'products_page' }}">Products</a>
     <a href="{{ url_for('connect') }}" class="{{ 'on' if page == 'connect' }}">Connect accounts</a>
     <a href="{{ url_for('brand_page') }}" class="{{ 'on' if page == 'brand_page' }}">Brand</a>

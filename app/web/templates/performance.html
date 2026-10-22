@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Performance{% endblock %}
+{% macro pct(v) %}{{ "%.1f%%"|format(100 * v) if v is not none else "–" }}{% endmacro %}
+{% macro num(v) %}{{ "{:,}".format(v|int) if v is not none else "–" }}{% endmacro %}
+{% block body %}
+<div class="row-head">
+  <div><h1>Performance</h1>
+    <p class="muted">How your posts did. Numbers update every night; every Monday at 9 you get a report on Telegram,
+      and the agent's lessons feed straight into the next plan.</p></div>
+  <form method="post" action="{{ url_for('run_action', action='stats') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('performance_page') }}">
+    <button type="submit" data-busy="Starting…" {% if jobs.get('stats', {}).get('state') == 'running' %}disabled{% endif %}>Refresh numbers &amp; lessons</button>
+  </form>
+</div>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+{% if jobs.get('stats', {}).get('state') == 'done' %}<div class="flash ok">✅ {{ jobs.stats.message }}</div>{% endif %}
+<div class="toc"><a href="?days=7" {% if days == 7 %}style="font-weight:700"{% endif %}>Last 7 days</a>
+  <a href="?days=28" {% if days == 28 %}style="font-weight:700"{% endif %}>Last 4 weeks</a></div>
+
+{% if lessons %}
+<section class="card">
+  <h2>💡 {{ lessons.headline }}</h2>
+  <div class="muted">The agent's lessons from {{ lessons.date }} — the next plan follows them.</div>
+  <div class="two" style="margin-top:8px">
+    <div><h3>What worked</h3>{% for w in lessons.worked %}<div>✅ {{ w }}</div>{% endfor %}</div>
+    <div><h3>Try next</h3>{% for t in lessons.try_next %}<div>👉 {{ t }}</div>{% endfor %}</div>
+  </div>
+</section>
+{% endif %}
+
+{% if rep and rep.rows %}
+<section class="card">
+  <h2>Totals</h2>
+  <div class="kpis">
+    {% for platform, t in rep.totals.items() %}
+    <div class="kpi"><span class="muted">{{ platform|title }} reach</span><b>{{ num(t.reach) }}</b><span class="muted">{{ t.posts }} post(s)</span></div>
+    <div class="kpi"><span class="muted">{{ platform|title }} likes, comments, saves, shares</span><b>{{ num(t.interactions) }}</b></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>What works best</h2>
+  <p class="muted">Engagement = likes + comments + saves + shares, divided by reach. Higher is better.</p>
+  <div class="two">
+    {% for title, groups in [("By format", rep.by_format), ("By topic", rep.by_theme), ("By AI image style", rep.by_style), ("By posting time", rep.by_day)] %}
+    {% if groups %}
+    <div class="scroll"><h3>{{ title }}</h3>
+      <table class="stats"><tr><th></th><th>Posts</th><th>Avg reach</th><th>Engagement</th><th>Saves</th></tr>
+      {% for g in groups %}<tr><td>{{ g.name }}</td><td>{{ g.posts }}</td><td>{{ num(g.avg_reach) }}</td><td>{{ pct(g.avg_rate) }}</td><td>{{ g.saves }}</td></tr>{% endfor %}
+      </table></div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card scroll">
+  <h2>Every post</h2>
+  <table class="stats">
+    <tr><th>Post</th><th>Reach</th><th>Views</th><th>Likes</th><th>Comments</th><th>Saves</th><th>Shares</th><th>Engagement</th></tr>
+    {% for r in rep.rows %}
+    <tr><td><b>{{ r.when.strftime("%a %d %b") }}</b> · {{ r.platform|title }} · {{ r.format.replace('_', ' ') }}
+        {% if r.permalink %}· <a href="{{ r.permalink }}" target="_blank" rel="noopener">view</a>{% endif %}
+        <div class="muted">{{ (r.idea or r.caption or '')[:90] }}</div></td>
+      <td>{{ num(r.reach) }}</td><td>{{ num(r.impressions) }}</td><td>{{ num(r.likes) }}</td><td>{{ num(r.comments) }}</td>
+      <td>{{ num(r.saves) }}</td><td>{{ num(r.shares) }}</td><td>{{ pct(r.rate) }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% else %}
+<section class="card muted">No results yet for this period. Once posts have been live for a few hours, press
+  <b>Refresh numbers &amp; lessons</b> (or wait for tonight's automatic update).</section>
+{% endif %}
+{% endblock %}

@@ -25,7 +25,8 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template, requ
                    url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import DATA_DIR, LOGS_DIR, brand_editor, jobs, planner, producer, publisher, secrets_store, status, updater
+from app import (DATA_DIR, LOGS_DIR, brand_editor, insights, jobs, planner, producer, publisher, secrets_store,
+                 status, updater)
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.key_tests import run_test
 from app.keys import KEYS_BY_NAME, SERVICES, SERVICES_BY_ID
@@ -38,7 +39,7 @@ MAX_FAILED_LOGINS = 5
 LOCKOUT_SECONDS = 300
 _failed_logins: list[float] = []
 
-CURRENT_PHASE = 3  # raise as each phase ships; tiles at or below it become live buttons
+CURRENT_PHASE = 4  # raise as each phase ships; tiles at or below it become live buttons
 
 # Buttons for work the agent will do. Each turns on when its phase is built.
 ACTIONS = [
@@ -49,7 +50,7 @@ ACTIONS = [
     ("reel", "Make one reel", "Pick a product; Google's video AI makes a short vertical video.", 2.5),
     ("queue", "See scheduled posts", "Everything approved and waiting to go out.", 3),
     ("pause", "Pause / resume posting", "Stops all posting until you resume. Drafts and plans keep working.", 3),
-    ("stats", "Last 7 days performance", "Reach, saves, shares and clicks per post.", 4),
+    ("stats", "Performance", "Reach, saves, shares per post, and what the agent learned for next week.", 4),
 ]
 
 
@@ -288,6 +289,18 @@ def create_app() -> Flask:
         else:
             flash(f"Draft #{draft_id} is already {d['status']}.", "warn")
         return redirect(url_for("drafts_page") + f"#d{draft_id}")
+
+    @app.route("/performance")
+    @login_required
+    def performance_page():
+        slug = current_brand_slug()
+        brand, brand_error = _load(slug)
+        days = 28 if request.args.get("days") == "28" else 7
+        job_status = jobs.status(slug) if slug else {}
+        return render_template("performance.html", brand=brand, brand_error=brand_error, days=days,
+                               rep=insights.report(brand, days) if brand else None,
+                               lessons=insights.lessons(brand) if brand else None,
+                               jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
 
     @app.route("/queue")
     @login_required

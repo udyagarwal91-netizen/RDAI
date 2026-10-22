@@ -82,6 +82,35 @@ def format_queue(brand: Brand) -> str:
     return "\n".join(lines)
 
 
+def format_stats(brand: Brand, days: int = 7) -> str:
+    from app import insights
+
+    rep = insights.report(brand, days)
+    if not rep["rows"]:
+        return (f"📊 No results yet for the last {days} days. Numbers appear once posts have been live for a while "
+                "(they're collected every night).")
+    names = {"instagram": "Instagram", "facebook": "Facebook"}
+    lines = [f"📊 <b>{esc(brand.name)} — last {days} days</b>"]
+    for platform, t in rep["totals"].items():
+        lines.append(f"{names.get(platform, platform)}: {t['posts']} posts · reach {t['reach']:,} · "
+                     f"{t['interactions']:,} likes/comments/saves/shares")
+    if rep["best"]:
+        lines.append("\n<b>Best posts</b>")
+        for r in rep["best"]:
+            lines.append(f"🏆 {r['when']:%a %d %b} {names.get(r['platform'], '')} · {esc(r['format'].replace('_', ' '))} · "
+                         f"reach {r['reach'] or 0:,} · {100 * r['rate']:.1f}% engaged · {r['saves'] or 0} saves"
+                         + (f"\n{esc(r['permalink'])}" if r["permalink"] else ""))
+    if rep["by_format"]:
+        lines.append("\n<b>By format</b> (engagement)")
+        lines += [f"• {esc(g['name'])}: {100 * (g['avg_rate'] or 0):.1f}% over {g['posts']} post(s)" for g in rep["by_format"]]
+    les = insights.lessons(brand)
+    if les:
+        lines.append(f"\n💡 <b>{esc(les['headline'])}</b>")
+        lines += [f"✅ {esc(w)}" for w in les["worked"]] + [f"👉 {esc(t)}" for t in les["try_next"]]
+        lines.append("<i>The next plan follows these lessons.</i>")
+    return "\n".join(lines)
+
+
 def _split(text: str) -> list[str]:
     parts, current = [], ""
     for block in text.split("\n\n"):
@@ -133,7 +162,7 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
 HELP = ("<b>Commands</b>\n/plan — this week's plan\n/generate — make drafts for the coming week now\n"
         "/image <i>product</i> — one AI image, e.g. <code>/image active brief 3</code>\n"
         "/queue — what's waiting to be posted\n/pause — stop all posting\n/resume — start posting again\n"
-        "/help — this list\n\nComing soon: /reel, /stats, /brand")
+        "/stats — last 7 days performance\n/help — this list\n\nComing soon: /reel, /brand")
 
 
 # ---------------------------------------------------------------- drafts
@@ -289,9 +318,11 @@ class Bot:
             publisher.set_paused(brand, command == "/pause")
             send_message(brand, "⏸ Posting paused. Nothing will be posted until you send /resume." if command == "/pause"
                          else "▶️ Posting resumed. Anything overdue goes out within a minute.")
+        elif command == "/stats":
+            send_message(brand, format_stats(brand))
         elif command in ("/start", "/help"):
             send_message(brand, HELP)
-        elif command in ("/reel", "/stats", "/brand"):
+        elif command in ("/reel", "/brand"):
             send_message(brand, f"{esc(command)} is coming in a later phase. For now: /plan, /generate, /image")
         elif text:
             send_message(brand, "I didn't understand that. " + HELP)

@@ -44,7 +44,7 @@ def test_home_shows_checklist_and_next_step(client):
     html = client.get("/").get_data(as_text=True)
     assert "0 of 6 accounts connected" in html
     assert "Connect <b>Telegram</b>" in html
-    assert "coming in phase 4" in html and "coming in phase 2b" in html
+    assert "/performance" in html  # phase 4 tile is live
     assert "/action/sync" in html and "/action/plan" in html  # phase 1 buttons are live
 
 

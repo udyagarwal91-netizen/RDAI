@@ -110,6 +110,8 @@
       {% if live and key == "queue" %}
       <div class="muted">{{ queued }} post(s) waiting.</div>
       <form><a class="btn" href="{{ url_for('queue_page') }}">See scheduled posts</a></form>
+      {% elif live and key == "stats" %}
+      <form><a class="btn" href="{{ url_for('performance_page') }}">See performance</a></form>
       {% elif live and key == "pause" %}
       <div class="{{ 'warn-line' if paused else 'muted' }}">{{ "⏸ Posting is paused." if paused else "▶️ Posting is on." }}</div>
       <form method="post" action="{{ url_for('run_action', action='resume' if paused else 'pause') }}">

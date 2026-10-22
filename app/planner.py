@@ -129,20 +129,9 @@ def targets(brand: Brand, n_slots: int) -> tuple[dict, dict, int]:
 
 
 def performance_summary(brand: Brand) -> str:
-    """What worked in the last 4 weeks, in a few lines (empty until Phase 4 collects results)."""
-    with connect() as conn:
-        rows = conn.execute("""
-            SELECT d.format, cp.theme, AVG(i.reach) AS reach, AVG(i.saves) AS saves, AVG(i.shares) AS shares,
-                   COUNT(*) AS n
-            FROM insights i JOIN posts p ON p.id = i.post_id JOIN drafts d ON d.id = p.draft_id
-            LEFT JOIN content_plan cp ON cp.id = d.plan_id
-            WHERE i.brand = ? AND i.collected_at >= date('now', '-28 days')
-            GROUP BY d.format, cp.theme ORDER BY saves DESC""", (brand.slug,)).fetchall()
-    if not rows:
-        return "No post results yet — this is one of the first plans. Use a balanced, varied mix."
-    lines = [f"- {r['format']} / {r['theme']}: {r['n']} posts, avg reach {r['reach']:.0f}, "
-             f"saves {r['saves']:.1f}, shares {r['shares']:.1f}" for r in rows]
-    return "Last 4 weeks (best first by saves):\n" + "\n".join(lines)
+    """What worked in the last 4 weeks: numbers by format/topic/style/time plus the analyst's lessons."""
+    from app import insights
+    return insights.for_planner(brand)
 
 
 def recent_ideas(brand: Brand) -> list[str]:

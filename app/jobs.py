@@ -16,7 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app import claude, gemini, planner, producer, publisher, renderer, shopify, telegram, updater
+from app import claude, gemini, insights, planner, producer, publisher, renderer, shopify, telegram, updater
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.db import get_state, set_state
 
@@ -42,6 +42,12 @@ def plan(slug: str) -> str:
     last = json.loads(get_state(slug, "last_sync") or "{}")
     if not last or datetime.fromisoformat(last["at"]) < datetime.now(timezone.utc) - timedelta(hours=6):
         sync(slug)  # plan with fresh prices and stock
+    if brand.secret("META_ACCESS_TOKEN"):
+        try:  # plan with fresh results
+            insights.collect(brand)
+            insights.make_lessons(brand)
+        except (publisher.PublishError, claude.ClaudeError) as e:
+            log.warning("Couldn't refresh results before planning: %s", e)
     result = planner.make_plan(brand)
     rows = planner.upcoming_plan(brand)
     try:
@@ -150,6 +156,30 @@ def _tell(brand, text: str) -> None:
         pass
 
 
+def stats(slug: str, send: bool = True) -> str:
+    """Fetch the latest numbers, update the lessons, and (optionally) send the weekly report."""
+    brand = load_brand(slug)
+    n = insights.collect(brand)
+    les = insights.make_lessons(brand)
+    if send:
+        try:
+            telegram.send_message(brand, telegram.format_stats(brand))
+        except telegram.TelegramError as e:
+            log.warning("Couldn't send the report: %s", e)
+    return f"Updated numbers for {n} post(s)." + (f" New lessons: {les['headline']}" if les else
+                                                  " Lessons need at least 3 posts with results.")
+
+
+def collect_tick(slug: str) -> None:
+    """Every night: refresh post numbers (no message)."""
+    try:
+        brand = load_brand(slug)
+        if brand.secret("META_ACCESS_TOKEN"):
+            insights.collect(brand)
+    except Exception:
+        log.exception("Collecting results failed")
+
+
 def pause(slug: str) -> str:
     publisher.set_paused(load_brand(slug), True)
     return "Posting is paused. Nothing will be posted until you press Resume."
@@ -171,7 +201,7 @@ def publish_tick(slug: str) -> None:
 
 
 ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
-           "drafts": drafts, "image": image, "regen": regen, "pause": pause, "resume": resume}
+           "drafts": drafts, "image": image, "regen": regen, "pause": pause, "resume": resume, "stats": stats}
 
 
 # ---------------------------------------------------------------- background running
@@ -254,6 +284,11 @@ def reload_schedule() -> None:
         # Every morning, prepare drafts for posts due in the next 2 days, so you have time to approve.
         _scheduler.add_job(start, CronTrigger(hour=7, minute=30, timezone=tz), args=[slug, "drafts"],
                            kwargs={"days": 2}, id=f"{slug}:drafts")
+        # Every night: refresh post numbers. Monday morning: lessons + weekly report on Telegram.
+        _scheduler.add_job(collect_tick, CronTrigger(hour=23, minute=10, timezone=tz), args=[slug],
+                           id=f"{slug}:collect")
+        _scheduler.add_job(start, CronTrigger(day_of_week="mon", hour=9, minute=5, timezone=tz), args=[slug, "stats"],
+                           id=f"{slug}:stats")
         # Every minute: post anything that's due.
         _scheduler.add_job(publish_tick, IntervalTrigger(minutes=1), args=[slug], id=f"{slug}:publish",
                            max_instances=1, coalesce=True)
