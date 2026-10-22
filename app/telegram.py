@@ -162,7 +162,8 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
 HELP = ("<b>Commands</b>\n/plan — this week's plan\n/generate — make drafts for the coming week now\n"
         "/image <i>product</i> — one AI image, e.g. <code>/image active brief 3</code>\n"
         "/queue — what's waiting to be posted\n/pause — stop all posting\n/resume — start posting again\n"
-        "/stats — last 7 days performance\n/help — this list\n\nComing soon: /reel, /brand")
+        "/reel <i>product</i> — one AI reel (2–6 min, about ₹70)\n"
+        "/stats — last 7 days performance\n/help — this list\n\nComing soon: /brand (for client brands)")
 
 
 # ---------------------------------------------------------------- drafts
@@ -209,7 +210,11 @@ def send_draft(brand: Brand, d: dict) -> None:
     if not (token and chat_id):
         raise TelegramError("Telegram isn't connected yet (Connect accounts → Telegram).")
     files = [f for f in d["files"] if f.exists()]
-    if len(files) == 1:
+    if files and files[0].suffix == ".mp4":
+        with open(files[0], "rb") as fh:
+            _call_files(token, "sendVideo", {"chat_id": chat_id, "supports_streaming": "true", "width": "1080",
+                                             "height": "1920"}, {"video": fh})
+    elif len(files) == 1:
         with open(files[0], "rb") as fh:
             _call_files(token, "sendPhoto", {"chat_id": chat_id}, {"photo": fh})
     elif files:
@@ -322,7 +327,24 @@ class Bot:
             send_message(brand, format_stats(brand))
         elif command in ("/start", "/help"):
             send_message(brand, HELP)
-        elif command in ("/reel", "/brand"):
+        elif command == "/reel":
+            query = text[len("/reel"):].strip()
+            style = producer.find_style(brand, query) if query else None
+            if not style:
+                from app.planner import catalog_styles
+                names = "\n".join(f"• {esc(s['title'])}" for s in catalog_styles(brand))
+                send_message(brand, f"Which product? Send e.g. <code>/reel active brief 3</code>\n\n{names}")
+                return
+            made, cap = producer.reels_this_week(brand), producer.reel_cap(brand)
+            if made >= cap:
+                send_message(brand, f"🎬 You've reached this week's reel limit ({made} of {cap}). "
+                                    "Raise it on Brand → Content mix if you want more.")
+                return
+            started = jobs.start(brand.slug, "reel", style_id=style["id"])
+            send_message(brand, f"🎬 Making a reel of <b>{esc(style['title'])}</b>. This takes 2–6 minutes and costs "
+                                "about ₹70 — I'll send it here when it's ready." if started
+                         else "Already making a reel — hang on.")
+        elif command == "/brand":
             send_message(brand, f"{esc(command)} is coming in a later phase. For now: /plan, /generate, /image")
         elif text:
             send_message(brand, "I didn't understand that. " + HELP)
@@ -344,7 +366,7 @@ class Bot:
             send_message(brand, f"📤 Posting draft #{post['draft_id']} to {name} within a minute…")
         else:
             publisher.cancel(brand, post_id)
-            send_message(brand, f"OK — draft #{post['draft_id']} won't be posted to {name}.")
+            send_message(brand, f"OK — draft #{post['draft_id']} won't be posted (again) to {name}.")
 
     def _regenerate(self, brand: Brand, draft_id: int, note: str) -> None:
         from app import jobs, producer

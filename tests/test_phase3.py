@@ -247,3 +247,25 @@ def test_regenerate_skip_makes_plain_new_version(studio, monkeypatch):
     bot.handle_button(studio.brand, {"id": "q", "from": {"id": 12345}, "data": f"r:{draft_id}"}, "12345")
     bot.handle(studio.brand, {"chat": {"id": 12345}, "text": "/skip"}, "12345")
     assert started == [{"draft_id": draft_id, "note": ""}]
+
+
+def test_unexpected_meta_answer_is_retried_not_stuck(live, monkeypatch):
+    draft_id = _approved(live)
+    _due_now(draft_id)
+    monkeypatch.setitem(publisher.PLATFORMS, "facebook", lambda b, d: {}["id"])  # Meta answered without an id
+    publisher.publish_due(live.brand, live.notify)
+    with connect() as conn:
+        fb = conn.execute("SELECT * FROM posts WHERE draft_id = ? AND platform = 'facebook'", (draft_id,)).fetchone()
+    assert fb["status"] == "queued" and "unexpected" in fb["last_error"]  # will be retried
+
+
+def test_interrupted_post_is_flagged_not_reposted(live):
+    draft_id = _approved(live)
+    old = (publisher._now(live.brand) - timedelta(minutes=30)).isoformat()
+    with connect() as conn:
+        conn.execute("UPDATE posts SET status = 'publishing', published_at = ? WHERE draft_id = ?", (old, draft_id))
+    publisher.publish_due(live.brand, live.notify)
+    with connect() as conn:
+        statuses = {r[0] for r in conn.execute("SELECT status FROM posts WHERE draft_id = ?", (draft_id,))}
+    assert statuses == {"failed"} and live.meta.calls == []
+    assert any("interrupted" in t and b[0][0] == "📤 Post now" for t, b in live.alerts)

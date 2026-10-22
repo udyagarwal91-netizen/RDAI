@@ -16,7 +16,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app import claude, gemini, insights, planner, producer, publisher, renderer, shopify, telegram, updater
+from app import (claude, gemini, insights, planner, producer, publisher, renderer, shopify, telegram, updater,
+                 video)
 from app.brands import BrandConfigError, list_brands, load_brand
 from app.db import get_state, set_state
 
@@ -78,7 +79,7 @@ def update(slug: str) -> str:
 
 FRIENDLY_ERRORS = (shopify.ShopifyError, planner.PlanError, telegram.TelegramError, BrandConfigError,
                    updater.UpdateError, producer.DraftError, gemini.GeminiError, claude.ClaudeError,
-                   renderer.RenderError)
+                   renderer.RenderError, video.VideoError)
 
 
 def drafts(slug: str, days: int = 7) -> str:
@@ -123,6 +124,21 @@ def image(slug: str, style_id: str, note: str = "") -> str:
     d = producer.get_draft(brand, draft_id)
     sent = _send(brand, d)
     return f"Made AI image draft #{draft_id}{sent}. Cost about US${d['cost_usd']:.2f}."
+
+
+def reel(slug: str, style_id: str, note: str = "") -> str:
+    """One AI reel on request (from /reel or the Control Center)."""
+    brand = load_brand(slug)
+    post = producer.on_demand_post(brand, style_id, note)
+    post["format"] = "gemini_reel"
+    try:
+        draft_id = producer.make_draft(brand, on_demand=post)
+    except FRIENDLY_ERRORS as e:
+        _tell(brand, f"⚠️ Couldn't make the reel: {telegram.esc(e)}")
+        raise
+    d = producer.get_draft(brand, draft_id)
+    kind = "reel" if d["format"] == "gemini_reel" else "image (the reel couldn't be made — see the draft's note)"
+    return f"Made {kind} draft #{draft_id}{_send(brand, d)}. Cost about US${d['cost_usd']:.2f}."
 
 
 def regen(slug: str, draft_id: int, note: str = "") -> str:
@@ -201,7 +217,7 @@ def publish_tick(slug: str) -> None:
 
 
 ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
-           "drafts": drafts, "image": image, "regen": regen, "pause": pause, "resume": resume, "stats": stats}
+           "drafts": drafts, "image": image, "reel": reel, "regen": regen, "pause": pause, "resume": resume, "stats": stats}
 
 
 # ---------------------------------------------------------------- background running

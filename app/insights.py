@@ -132,6 +132,8 @@ def latest(brand: Brand, days: int = 7) -> list[dict]:
         d["interactions"] = sum(d[k] or 0 for k in ("likes", "comments", "saves", "shares"))
         d["rate"] = (d["interactions"] / d["reach"]) if d["reach"] else None
         d["when"] = datetime.fromisoformat(d["scheduled_for"])
+        d["format_label"] = {"template_image": "Brand image", "carousel": "Carousel", "gemini_image": "AI image",
+                             "gemini_reel": "Reel"}.get(d["format"], d["format"])
         out.append(d)
     return out
 

@@ -73,16 +73,20 @@ def _env(brand: Brand) -> Environment:
 def brand_context(brand: Brand, width: int, height: int) -> dict:
     style = brand.config["style"]
     logo = (brand.folder / style["logo_path"]) if style.get("logo_path") else None
+    logo_light = (brand.folder / style["logo_on_dark_path"]) if style.get("logo_on_dark_path") else None
     website = (brand.config["brand"].get("website") or "").replace("https://", "").replace("http://", "").strip("/")
     return {
         "c": style["colors"], "fonts": style["fonts"], "backdrop": style.get("product_photo_backdrop", "#FFFFFF"),
         "logo": file_uri(logo) if logo else None, "brand_name": brand.name, "website": website,
+        "logo_light": file_uri(logo_light) if logo_light else None,
         "width": width, "height": height,
     }
 
 
-def render(brand: Brand, template: str, pages: list[dict], size: tuple[int, int] = (1080, 1350)) -> list[bytes]:
-    """Render one JPEG per page dict (each dict fills the template's blanks)."""
+def render(brand: Brand, template: str, pages: list[dict], size: tuple[int, int] = (1080, 1350),
+           transparent: bool = False) -> list[bytes]:
+    """Render one JPEG per page dict (each dict fills the template's blanks).
+    transparent=True makes see-through PNGs instead (for laying over a video)."""
     _browser_ready.wait(timeout=1800)
     if _browser_problem:
         raise RenderError(_browser_problem)
@@ -99,7 +103,10 @@ def render(brand: Brand, template: str, pages: list[dict], size: tuple[int, int]
                 html = env.get_template(template).render(**base, **fields)
                 page.set_content(html, wait_until="networkidle", timeout=30000)
                 page.evaluate("document.fonts.ready")
-                images.append(page.screenshot(type="jpeg", quality=92, full_page=False))
+                if transparent:
+                    images.append(page.screenshot(type="png", omit_background=True, full_page=False))
+                else:
+                    images.append(page.screenshot(type="jpeg", quality=92, full_page=False))
             browser.close()
     except PlaywrightError as e:
         raise RenderError(f"The picture maker failed: {str(e).splitlines()[0][:200]}") from None

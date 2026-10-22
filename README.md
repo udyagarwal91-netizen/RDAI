@@ -5,9 +5,9 @@ Instagram + Facebook posts, makes the images/reels, sends each draft to you on
 Telegram for ✅ approval, posts the approved ones on time, and learns from
 what performed well.
 
-**Status:** Phases 0–3 are built: setup, products + weekly plan, drafts (captions, brand images, carousels,
-AI images) with quality checks and Telegram approval, and automatic posting of approved drafts to Instagram and
-Facebook. Next: reels (2b) and performance learning (4). Run it, connect your
+**Status:** Phases 0–4 are built: setup, products + weekly plan, drafts (captions, brand images, carousels,
+AI images, AI reels) with quality checks and Telegram approval, automatic posting to Instagram and Facebook,
+and weekly performance reports whose lessons feed the next plan. Next: Phase 5 extras. Run it, connect your
 accounts, then press **Get products from Shopify** and **Make this week's plan** — or let the timer
 do it every week.
 
@@ -21,6 +21,7 @@ Double-click the start file and it opens in your browser:
 | **Plan** | This week's planned posts with product photo, Shopify price, idea and hook; ⚠️ marks anything to check |
 | **Drafts** | Finished posts waiting for you: pictures, caption, ⚠️ checks, Approve / Regenerate / Reject |
 | **Queue** | Approved posts and when they go out; Post now / cancel; links to what's been posted |
+| **Performance** | Reach, saves, shares per post; what works best by format, topic, style and time; the agent's lessons |
 | **Products** | Everything the agent knows from Shopify, grouped by style, plus any price mistakes found in your store |
 | **Connect accounts** | Step-by-step help for Telegram, Claude, Gemini, Shopify, Instagram/Facebook — paste, press **Save & test** |
 | **Brand** | Store address, posting days/times, content mix, colours, logo upload, voice, hashtags, banned words, approval mode, brand rules |
@@ -84,6 +85,8 @@ RDAI/
 │   ├── renderer.py         ← turns design templates into post images
 │   ├── gemini.py           ← AI images from the real product photo
 │   ├── checker.py          ← final quality check of pictures and caption
+│   ├── video.py            ← AI reels: Gemini clip + the agent's own text, price and logo layers
+│   ├── insights.py         ← post results from Meta, weekly report, lessons for the planner
 │   ├── producer.py         ← makes a finished draft: words → pictures → check → save
 │   ├── factcheck.py        ← checks prices and pack sizes in any text against Shopify
 │   ├── default_templates/  ← the post and carousel designs

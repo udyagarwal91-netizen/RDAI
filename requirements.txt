@@ -6,6 +6,7 @@ anthropic==1.17.0     # Claude (plans and captions)
 apscheduler==3.11.3   # the timer: weekly plan, daily product sync
 pillow==13.0.0        # resizes pictures and makes Instagram-ready JPEGs
 playwright==1.64.0    # hidden browser that turns design templates into post images
+imageio-ffmpeg==0.6.0 # bundled FFmpeg: puts text, price and logo on reels
 ruamel.yaml==0.19.1   # reads and saves brands/<brand>/config.yaml (keeps your notes in the file)
 
 # Only needed for running the automated checks (tests)

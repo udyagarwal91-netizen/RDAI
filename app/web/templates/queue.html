@@ -10,7 +10,7 @@
 {% macro row(g) %}
   {% set d = drafts.get(g.draft_id) %}
   <div class="plan-item">
-    {% if d and d.files %}<img class="thumb" src="{{ url_for('draft_media', draft_id=g.draft_id, n=1) }}?v={{ d.attempt }}" alt="Draft {{ g.draft_id }}">
+    {% if d and d.files %}<img class="thumb" src="{{ url_for('draft_media', draft_id=g.draft_id, n=d.thumb_n) }}?v={{ d.attempt }}" alt="Draft {{ g.draft_id }}">
     {% else %}<div class="thumb empty">no picture</div>{% endif %}
     <div>
       <b>{{ g.when.strftime("%a %d %b, %I:%M %p") }}</b> · draft #{{ g.draft_id }}{% if d %} · {{ d.format_label }}{% endif %}

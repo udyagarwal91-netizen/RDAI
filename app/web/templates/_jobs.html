@@ -1,6 +1,6 @@
 {# Shows what's running / just finished, and refreshes the page when a job ends. #}
 {% set names = {"sync": "Getting products from Shopify", "plan": "Making the plan", "send_plan": "Sending the plan to Telegram", "update": "Updating the agent",
-                "drafts": "Making drafts", "image": "Making an AI image", "regen": "Remaking a draft", "stats": "Getting the latest results"} %}
+                "drafts": "Making drafts", "image": "Making an AI image", "regen": "Remaking a draft", "stats": "Getting the latest results", "reel": "Making a reel (2–6 minutes)"} %}
 {% for key, j in jobs.items() %}
   {% if j.state == "running" %}
   <div class="flash warn job"><span class="spinner"></span> {{ names.get(key, key) }}… (started {{ j.at }}). You can leave this page; it keeps going.</div>

@@ -47,7 +47,8 @@ ACTIONS = [
     ("plan", "Make this week's plan", "Claude plans the week and sends it to your Telegram.", 1),
     ("drafts", "Create drafts now", "Makes the next posts and sends them to Telegram for approval.", 2),
     ("image", "Make one AI image", "Pick a product; Gemini makes a lifestyle image of it.", 2),
-    ("reel", "Make one reel", "Pick a product; Google's video AI makes a short vertical video.", 2.5),
+    ("reel", "Make one reel", "Pick a product; Google's video AI makes a short vertical video with your price and "
+     "logo added. Takes 2–6 minutes, about ₹70.", 2.5),
     ("queue", "See scheduled posts", "Everything approved and waiting to go out.", 3),
     ("pause", "Pause / resume posting", "Stops all posting until you resume. Drafts and plans keep working.", 3),
     ("stats", "Performance", "Reach, saves, shares per post, and what the agent learned for next week.", 4),
@@ -184,6 +185,8 @@ def create_app() -> Flask:
                                last_sync=last_sync, plan_count=len(plan_rows),
                                styles=planner.catalog_styles(brand) if brand else [],
                                ready=set(jobs.ACTIONS) | {"queue", "pause"},  # tiles that have something behind them
+                               reels_made=producer.reels_this_week(brand) if brand else 0,
+                               reel_cap=producer.reel_cap(brand) if brand else 0,
                                paused=publisher.is_paused(brand) if brand else False,
                                queued=sum(len(g["posts"]) for g in publisher.queue(brand)) if brand else 0,
                                version=updater.installed(), has_github=bool(secrets_store.get("GITHUB_TOKEN")),
@@ -196,7 +199,7 @@ def create_app() -> Flask:
             abort(404)
         slug = current_brand_slug()
         kwargs = {}
-        if action == "image":
+        if action in ("image", "reel"):
             kwargs = {"style_id": request.form.get("style_id", ""), "note": request.form.get("note", "")[:300]}
         elif action == "regen":
             kwargs = {"draft_id": int(request.form.get("draft_id", "0") or 0)}
@@ -341,7 +344,8 @@ def create_app() -> Flask:
         path = d["files"][n - 1].resolve()
         if DATA_DIR.resolve() not in path.parents:
             abort(404)
-        return send_file(path, mimetype="image/jpeg", max_age=0)
+        return send_file(path, mimetype="video/mp4" if path.suffix == ".mp4" else "image/jpeg", max_age=0,
+                         conditional=True)  # conditional=True lets the browser stream/seek the video
 
     @app.route("/check-all", methods=["POST"])
     @login_required

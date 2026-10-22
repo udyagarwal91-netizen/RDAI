@@ -71,6 +71,10 @@ sentences, without any text or logos. Pick "image_style" to suit the post:
 - website_model: a model wearing the product like a premium catalogue photo, never suggestive (use sparingly)
 Pick "photo_index": the product photo that shows the product most clearly (prefer clean product shots).
 
+Reels (gemini_reel): "headline" is the hook shown on screen in the first 3 seconds (max 6 words, punchy).
+"scene" describes an ~8-second vertical video: setting, what moves (folding, unpacking, a gym bag zipping, a
+morning routine), slow camera movement and mood — no text on screen. Keep reel captions to 1–2 short lines.
+
 Carousel posts need 2–3 "slides" (headline max 6 words + body max 25 words each) for the middle of the carousel —
 the agent adds a cover slide and a final price slide itself. Other formats: return an empty slides list.
 

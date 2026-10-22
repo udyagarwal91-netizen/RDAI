@@ -10,11 +10,11 @@ Shopify products → weekly plan (Claude) → images/reels (HTML templates via P
 The owner is not a coder: user-facing text, docs and error messages must be plain English with exact click paths.
 
 Build roadmap (one phase at a time, confirm with the owner after each): 0 setup ✅ → 1 Shopify sync + weekly plan
-on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval ✅ → 2b Veo reels → 3 publishing ✅ (awaiting owner's live test) → 4 insights
+on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval ✅ → 2b reels ✅ → 3 publishing ✅ → 4 insights ✅ (2b/3/4 awaiting owner's live test)
 → 5 extras. The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
 (deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week, AI images may mix
 product-only / dressed-model / website-style model shots (owner chose a mix; brand form can restrict).
-Veo 3.1 preview models shut down 2026-10-22 — Phase 2b must use the replacement (`gemini-omni-1.1-flash`, verify docs).
+Veo 3.1 preview models shut down 2026-10-22; reels use `gemini-omni-1.1-flash` (~US$0.10/s at 720p).
 
 ## Commands
 
@@ -40,7 +40,8 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   `output_config.format` (enums constrain slot/style ids) and a cached system prompt; retries once if slots are
   missing; `check_post` flags ₹ amounts not in Shopify, % discounts, banned and needs-proof words. A new plan
   replaces only `status='planned'` rows from its first slot on.
-- `app/jobs.py` — the single place actions live (`sync`, `plan`, `send_plan`, `update`, `drafts`, `image`, `regen`); used by Control Center buttons
+- `app/jobs.py` — the single place actions live (`sync`, `plan`, `send_plan`, `update`, `drafts`, `image`, `reel`, `regen`,
+  `pause`, `resume`, `stats`); used by Control Center buttons
   (background threads, status in `app_state` `job:<action>`) and the timer (weekly plan, daily 06:15 sync).
 - `app/telegram.py` — HTML messages split under 4096 chars; `Bot` long-polls `getUpdates` and ignores every chat
   except `TELEGRAM_CHAT_ID` (it idles until that is set, so the Settings test can still discover the chat ID).
@@ -75,10 +76,26 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
 - Regenerate takes an optional owner note (Telegram 🔁 → `app_state awaiting_regen` → next message or /skip; Drafts
   page note box) → `producer.remake(note=)` → writer prompt + Gemini `extra_instructions`. Remake keeps the draft's
   own format.
-- Home tiles go live only when `phase <= CURRENT_PHASE` AND the key has an action (`ready` set) — reel (2.5) stays off.
+- Home tiles go live only when `phase <= CURRENT_PHASE` AND the key has an action (`ready` set).
 - Timer: drafts daily 07:30 for posts due within 2 days (`jobs.drafts(days=2)`).
 - Updater never replaces `start-windows.bat` / `start-mac.command` (they are running during the update). Anything new
   needed at start-up must be done from Python (e.g. `renderer.start_browser_install`).
+- Reels (`app/video.py`): `generate_clip` → Interactions API, `response_format {type: video, aspect_ratio 9:16,
+  resolution 720p}`, `generation_config.video_config.task = reference_to_video` (product photo as subject reference);
+  video read from `model_output` (inline `data` or `uri` → Files API download). `compose` lays transparent PNG layers
+  rendered from `default_templates/reel_overlay.html` (hook / price / end card / logo, `renderer.render(transparent=True)`)
+  over the clip with bundled FFmpeg (`imageio-ffmpeg`) → 1080×1920 H.264/AAC (silent track added if none). `frames()`
+  feeds the checker. Drafts store `reel.mp4` + `cover.jpg` (`d["is_reel"]`, `d["thumb_n"]`). Weekly cap =
+  `content_mix.max_reels_per_week` counted over drafts from the last 7 days; over the cap or on Gemini failure the
+  draft falls back to an AI image with a note. Publishing: Instagram `media_type=REELS, upload_type=resumable` +
+  POST the file to `rupload.facebook.com/ig-api-upload/<ver>/<container>` (headers Authorization: OAuth, offset,
+  file_size); Facebook `graph-video.facebook.com/<ver>/<page>/videos` (post id from `fields=post_id`).
+- `app/insights.py` — `collect` (nightly 23:10 + before each plan + "Refresh" button): IG media insights
+  (reach, likes, comments, saved, shares, views, total_interactions, profile_visits, follows; reels add
+  ig_reels_avg_watch_time) and FB post insights (post_total_media_view_unique, post_media_view, post_clicks) + post
+  fields for reactions/comments/shares. Metrics Meta rejects are skipped (`_rejected`). `report` groups by
+  format/topic/AI style/time; `make_lessons` (Claude, needs ≥3 posts with reach) stores `app_state lessons`;
+  `for_planner` is what `planner.performance_summary` returns. Monday 09:05 `jobs.stats` sends the report.
 - `app/calendar_india.py` — only high-confidence festival dates (lunar ones marked approx) + owner's custom dates.
 - `app/secrets_store.py` — the only code that reads/writes keys. `.env` is loaded with `override=False`, so host
   env vars (Railway/Render) win. `save()` rewrites one line atomically and updates `os.environ` live.

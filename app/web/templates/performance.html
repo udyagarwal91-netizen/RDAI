@@ -60,7 +60,7 @@
   <table class="stats">
     <tr><th>Post</th><th>Reach</th><th>Views</th><th>Likes</th><th>Comments</th><th>Saves</th><th>Shares</th><th>Engagement</th></tr>
     {% for r in rep.rows %}
-    <tr><td><b>{{ r.when.strftime("%a %d %b") }}</b> · {{ r.platform|title }} · {{ r.format.replace('_', ' ') }}
+    <tr><td><b>{{ r.when.strftime("%a %d %b") }}</b> · {{ r.platform|title }} · {{ r.format_label }}
         {% if r.permalink %}· <a href="{{ r.permalink }}" target="_blank" rel="noopener">view</a>{% endif %}
         <div class="muted">{{ (r.idea or r.caption or '')[:90] }}</div></td>
       <td>{{ num(r.reach) }}</td><td>{{ num(r.impressions) }}</td><td>{{ num(r.likes) }}</td><td>{{ num(r.comments) }}</td>

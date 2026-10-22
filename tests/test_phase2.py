@@ -121,11 +121,6 @@ def test_invented_price_gets_one_rewrite_then_warning(studio):
     assert any("₹99" in w for w in d["warnings"]) and any("%" in w for w in d["warnings"])
 
 
-def test_reel_slots_become_ai_images_for_now(studio):
-    d = producer.get_draft(studio.brand, producer.make_draft(studio.brand, _plan_row("gemini_reel"), client=studio.claude))
-    assert d["format"] == "gemini_image" and any("Phase 2b" in w for w in d["warnings"])
-
-
 def test_writer_sends_product_photos_and_rules(studio):
     producer.make_draft(studio.brand, _plan_row(), client=studio.claude)
     call = next(c for c in studio.claude.calls if "caption" in c["output_config"]["format"]["schema"]["properties"])

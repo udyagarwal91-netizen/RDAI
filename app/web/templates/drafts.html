@@ -17,7 +17,12 @@
 <section class="card">
   {% for d in drafts %}
   <div class="draft" id="d{{ d.id }}">
+    {% if d.is_reel %}
+    <div class="shots"><video controls playsinline preload="none" style="width:100%; max-width:300px; aspect-ratio:9/16; border-radius:12px; background:#000"
+      poster="{{ url_for('draft_media', draft_id=d.id, n=2) }}?v={{ d.attempt }}" src="{{ url_for('draft_media', draft_id=d.id, n=1) }}?v={{ d.attempt }}"></video></div>
+    {% else %}
     <div class="shots">{% for f in d.files %}<img src="{{ url_for('draft_media', draft_id=d.id, n=loop.index) }}?v={{ d.attempt }}" alt="Draft {{ d.id }} image {{ loop.index }}" loading="lazy">{% endfor %}</div>
+    {% endif %}
     <div>
       <div class="row-head"><b>Draft #{{ d.id }} · {{ d.when.strftime("%a %d %b, %I:%M %p") if d.when else "not scheduled" }}</b>
         <span class="pill {{ 'ok' if d.status == 'approved' else ('err' if d.status == 'rejected' else 'soon') }}">{{ d.status }}</span></div>

@@ -65,5 +65,5 @@ def setup_logging() -> None:
         handler.addFilter(ScrubSecrets())
         root.addHandler(handler)
     # Libraries are chatty and can print full URLs (Telegram puts the token in the URL).
-    for noisy in ("urllib3", "werkzeug"):
+    for noisy in ("urllib3", "werkzeug", "apscheduler"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

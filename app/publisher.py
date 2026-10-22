@@ -106,9 +106,25 @@ def _upload_hidden_photos(brand: Brand, draft: dict) -> list[dict]:
     return photos
 
 
+def _is_reel(draft: dict) -> bool:
+    return bool(draft["files"]) and draft["files"][0].suffix == ".mp4"
+
+
 def publish_facebook(brand: Brand, draft: dict) -> tuple[str, str]:
     token = page_token(brand)
     page_id = brand.config["meta"]["facebook_page_id"]
+    if _is_reel(draft):
+        # Videos go to Meta's video upload address; the post id is used later for results.
+        ver = brand.config["meta"].get("graph_api_version", "v26.0")
+        with open(draft["files"][0], "rb") as fh:
+            body = _call("POST", f"https://graph-video.facebook.com/{ver}/{page_id}/videos", token,
+                         files={"source": fh}, description=draft["caption"], published="true")
+        video_id = body["id"]
+        info = _call("GET", f"{_base(brand)}/{video_id}", token, fields="permalink_url,post_id")
+        link = info.get("permalink_url", "")
+        if link.startswith("/"):
+            link = "https://www.facebook.com" + link
+        return info.get("post_id") or video_id, link
     if len(draft["files"]) == 1:
         with open(draft["files"][0], "rb") as fh:
             body = _call("POST", f"{_base(brand)}/{page_id}/photos", token, files={"source": fh},
@@ -123,8 +139,8 @@ def publish_facebook(brand: Brand, draft: dict) -> tuple[str, str]:
     return post_id, link
 
 
-def _wait_ready(brand: Brand, container_id: str, token: str) -> None:
-    for _ in range(24):  # up to about 2 minutes
+def _wait_ready(brand: Brand, container_id: str, token: str, tries: int = 24) -> None:
+    for _ in range(tries):  # 24 tries ≈ 2 minutes
         status = _call("GET", f"{_base(brand)}/{container_id}", token, fields="status_code").get("status_code")
         if status in ("FINISHED", "PUBLISHED"):
             return
@@ -144,8 +160,14 @@ def publish_instagram(brand: Brand, draft: dict) -> tuple[str, str]:
     if caption.count("#") > IG_HASHTAG_LIMIT:
         raise PublishError(f"The caption has more than {IG_HASHTAG_LIMIT} hashtags, which Instagram doesn't allow.")
     token = page_token(brand)
-    photos = _upload_hidden_photos(brand, draft)
     base = f"{_base(brand)}/{ig_id}"
+    if _is_reel(draft):
+        container = _upload_reel(brand, draft, base, token, caption)
+        _wait_ready(brand, container, token, tries=72)  # videos take longer: up to ~6 minutes
+        media_id = _call("POST", f"{base}/media_publish", token, creation_id=container)["id"]
+        link = _call("GET", f"{_base(brand)}/{media_id}", token, fields="permalink").get("permalink", "")
+        return media_id, link
+    photos = _upload_hidden_photos(brand, draft)
     if len(photos) == 1:
         container = _call("POST", f"{base}/media", token, image_url=photos[0]["url"], caption=caption)["id"]
     else:
@@ -159,6 +181,24 @@ def publish_instagram(brand: Brand, draft: dict) -> tuple[str, str]:
     media_id = _call("POST", f"{base}/media_publish", token, creation_id=container)["id"]
     link = _call("GET", f"{_base(brand)}/{media_id}", token, fields="permalink").get("permalink", "")
     return media_id, link
+
+
+def _upload_reel(brand: Brand, draft: dict, base: str, token: str, caption: str) -> str:
+    """Instagram reel: make a resumable container, then upload the video file straight from this computer."""
+    container = _call("POST", f"{base}/media", token, media_type="REELS", upload_type="resumable",
+                      caption=caption, share_to_feed="true")["id"]
+    ver = brand.config["meta"].get("graph_api_version", "v26.0")
+    data = draft["files"][0].read_bytes()
+    try:
+        r = requests.post(f"https://rupload.facebook.com/ig-api-upload/{ver}/{container}", data=data, timeout=600,
+                          headers={"Authorization": f"OAuth {token}", "offset": "0", "file_size": str(len(data))})
+    except requests.RequestException:
+        raise PublishError("The reel upload to Instagram was interrupted. It will be retried.") from None
+    body = r.json() if r.headers.get("content-type", "").startswith(("application/json", "text/javascript")) else {}
+    if r.status_code != 200 or not body.get("success", True) or "error" in body:
+        raise PublishError(_explain(body, r.status_code) if "error" in body else
+                           f"Instagram didn't accept the reel upload (error {r.status_code}).")
+    return container
 
 
 PLATFORMS = {"instagram": publish_instagram, "facebook": publish_facebook}
@@ -242,6 +282,7 @@ def queue(brand: Brand, include_done: bool = False) -> list[dict]:
 
 def publish_due(brand: Brand, notify) -> int:
     """Post everything that's due. `notify(text, buttons=None)` tells the owner. Returns posts published."""
+    recover_stuck(brand, notify)
     if is_paused(brand):
         return 0
     from app import producer
@@ -264,9 +305,16 @@ def publish_due(brand: Brand, notify) -> int:
         if not draft or draft["status"] not in ("approved", "published"):
             _update(post["id"], status="cancelled", last_error="the draft is no longer approved")
             continue
-        _update(post["id"], status="publishing", attempts=post["attempts"] + 1)
+        _update(post["id"], status="publishing", attempts=post["attempts"] + 1,
+                published_at=_now(brand).isoformat(timespec="seconds"))  # start time, overwritten on success
         try:
-            platform_id, link = PLATFORMS[post["platform"]](brand, draft)
+            try:
+                platform_id, link = PLATFORMS[post["platform"]](brand, draft)
+            except PublishError:
+                raise
+            except Exception as unexpected:  # odd answer from Meta, missing file… — treat like any failure
+                log.exception("Unexpected problem posting draft #%d to %s", post["draft_id"], name)
+                raise PublishError(f"Something unexpected happened ({type(unexpected).__name__}).") from None
         except PublishError as e:
             attempts = post["attempts"] + 1
             if attempts < MAX_ATTEMPTS:
@@ -286,6 +334,21 @@ def publish_due(brand: Brand, notify) -> int:
         notify(f"✅ Posted draft #{post['draft_id']} to {name}." + (f"\n{link}" if link else ""))
         _maybe_mark_published(post["draft_id"])
     return published
+
+
+def recover_stuck(brand: Brand, notify) -> None:
+    """Posts left "posting now…" for over 15 minutes (e.g. the laptop shut down mid-upload) may or may not have gone
+    out. Don't risk a duplicate: mark them failed and ask the owner to check."""
+    cutoff = (_now(brand) - timedelta(minutes=15)).isoformat()
+    with connect() as conn:
+        stuck = [dict(r) for r in conn.execute(
+            "SELECT * FROM posts WHERE brand = ? AND status = 'publishing' AND COALESCE(published_at, scheduled_for) < ?",
+            (brand.slug, cutoff))]
+    for post in stuck:
+        name = PLATFORM_NAMES[post["platform"]]
+        _update(post["id"], status="failed", last_error="interrupted while posting — check if it went out")
+        notify(f"⚠️ Posting draft #{post['draft_id']} to {name} was interrupted. Please check {name}: if it's not "
+               "there, press Post now.", [("📤 Post now", f"p:{post['id']}"), ("✅ It's there", f"s:{post['id']}")])
 
 
 def retry_now(brand: Brand, post_id: int) -> None:

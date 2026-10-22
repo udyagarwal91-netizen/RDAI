@@ -176,7 +176,7 @@ def test_bot_only_answers_owner(brand, monkeypatch):
     bot.handle(brand, {"chat": {"id": 999}, "text": "/plan"}, "12345")
     assert sent == []
     bot.handle(brand, {"chat": {"id": 12345}, "text": "/help"}, "12345")
-    bot.handle(brand, {"chat": {"id": 12345}, "text": "/reel"}, "12345")
+    bot.handle(brand, {"chat": {"id": 12345}, "text": "/brand"}, "12345")
     assert "Commands" in sent[0] and "later phase" in sent[1]
 
 

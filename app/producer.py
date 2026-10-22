@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app import checker, gemini, media, renderer, writer
+from app import checker, gemini, media, renderer, video, writer
 from app.brands import Brand
 from app.db import connect
 from app.planner import FORMAT_LABELS, catalog_styles, price_text
@@ -50,8 +50,9 @@ def _short_cta(brand: Brand) -> str:
 
 
 def make_visuals(brand: Brand, fmt: str, creative: dict, products: list[dict], photos: list[str],
-                 fix: str = "", owner_note: str = "") -> tuple[list[bytes], float, bool]:
-    """Returns (JPEG images, AI image cost in US$, made_by_ai)."""
+                 fix: str = "", owner_note: str = "") -> tuple[list[bytes], float, bool, bytes | None]:
+    """Returns (JPEG images, AI cost in US$, made_by_ai, reel video or None).
+    For reels the images are stills from the video (for the quality check and thumbnails)."""
     if not photos:
         raise DraftError("This product has no photos in Shopify, so no picture can be made.")
     photo_url = photos[min(creative["photo_index"], len(photos) - 1)]
@@ -59,7 +60,7 @@ def make_visuals(brand: Brand, fmt: str, creative: dict, products: list[dict], p
     if fmt == "template_image":
         page = {"photo": renderer.data_uri(photo), "headline": creative["headline"], "subline": creative["subline"],
                 "badge": _badge(products), "cta": _short_cta(brand), **_price_fields(products)}
-        return renderer.render(brand, "post.html", [page]), 0.0, False
+        return renderer.render(brand, "post.html", [page]), 0.0, False, None
     if fmt == "carousel":
         middle = creative["slides"][:3]
         total = len(middle) + 2
@@ -70,14 +71,31 @@ def make_visuals(brand: Brand, fmt: str, creative: dict, products: list[dict], p
                       "body": creative["subline"], "cta": _short_cta(brand), **_price_fields(products)})
         for i, p in enumerate(pages, 1):
             p.update(index=i, total=total)
-        return renderer.render(brand, "slide.html", pages), 0.0, False
-    # gemini_image (and reels, until Phase 2b): AI picture from the real product photo
+        return renderer.render(brand, "slide.html", pages), 0.0, False, None
+    extra = "; ".join(filter(None, [f"The owner asked for: {owner_note}" if owner_note else "", fix]))
+    if fmt == "gemini_reel":
+        clip, cost = video.generate_clip(brand, creative["scene"], creative["image_style"], photo, extra_instructions=extra)
+        reel = video.compose(brand, clip, {
+            "headline": creative["headline"], "product": products[0]["title"] if products else brand.name,
+            "badge": _badge(products), "cta": _short_cta(brand), **_price_fields(products)})
+        return video.frames(reel), cost, True, reel
+    # gemini_image: AI picture from the real product photo
     image, cost = gemini.generate_image(brand, creative["scene"], creative["image_style"], [photo],
-                                        extra_instructions="; ".join(filter(None, [
-                                            f"The owner asked for: {owner_note}" if owner_note else "", fix])))
+                                        extra_instructions=extra)
     logo_rel = brand.config["style"].get("logo_path")
     logo = brand.folder / logo_rel if logo_rel else None
-    return [media.to_jpeg(image, media.FEED_SIZE, logo=logo)], cost, True
+    return [media.to_jpeg(image, media.FEED_SIZE, logo=logo)], cost, True, None
+
+
+def reel_cap(brand: Brand) -> int:
+    return int(brand.config["content_mix"].get("max_reels_per_week", 0))
+
+
+def reels_this_week(brand: Brand, exclude_id: int | None = None) -> int:
+    since = (_now(brand) - timedelta(days=7)).isoformat()
+    with connect() as conn:
+        return conn.execute("SELECT COUNT(*) FROM drafts WHERE brand = ? AND format = 'gemini_reel' AND created_at >= ? "
+                            "AND id != ?", (brand.slug, since, exclude_id or 0)).fetchone()[0]
 
 
 def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | None = None,
@@ -90,8 +108,8 @@ def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | 
     if not products:
         raise DraftError("The product for this post is no longer in the store (or out of stock). Make a new plan.")
     notes = []
-    if post["format"] == "gemini_reel":
-        notes.append("reels arrive in Phase 2b — made an AI image instead for now")
+    if post["format"] == "gemini_reel" and reels_this_week(brand, replace_draft_id) >= reel_cap(brand):
+        notes.append(f"weekly reel limit reached ({reel_cap(brand)}) — made an AI image instead")
         post["format"] = "gemini_image"
     when = datetime.fromisoformat(post["scheduled_for"]) if post.get("scheduled_for") else None
     post["when_label"] = when.strftime("%a %d %b, %I:%M %p") if when else "not scheduled"
@@ -108,7 +126,17 @@ def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | 
 
     # 2. Pictures, 3. quality check, 4. one automatic fix if flagged.
     note = post.get("owner_note", "")
-    images, image_cost, ai_made = make_visuals(brand, post["format"], creative, products, photos, owner_note=note)
+    try:
+        images, image_cost, ai_made, reel = make_visuals(brand, post["format"], creative, products, photos,
+                                                         owner_note=note)
+    except (video.VideoError, gemini.GeminiError) as e:
+        if post["format"] != "gemini_reel":
+            raise
+        log.warning("Reel failed (%s); making an AI image instead", e)
+        notes.append(f"the reel couldn't be made ({e}) — made an AI image instead")
+        post["format"] = "gemini_image"
+        images, image_cost, ai_made, reel = make_visuals(brand, post["format"], creative, products, photos,
+                                                         owner_note=note)
     cost += image_cost
     ref = photos[min(creative["photo_index"], len(photos) - 1)]
     passed, problems, check_cost = checker.check(brand, images, ref, caption, ai_made, client=client)
@@ -118,15 +146,18 @@ def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | 
         attempts = 2
         fix = "; ".join(problems)
         if ai_made:
-            images, image_cost, _ = make_visuals(brand, post["format"], creative, products, photos, fix=fix,
-                                                 owner_note=note)
-            cost += image_cost
+            try:
+                images, image_cost, _, reel = make_visuals(brand, post["format"], creative, products, photos, fix=fix,
+                                                           owner_note=note)
+                cost += image_cost
+            except (video.VideoError, gemini.GeminiError) as e:
+                log.warning("Second attempt failed: %s", e)  # keep the first version, flagged
         else:
             w = writer.write(brand, post, products, client=client, feedback=fix)
             cost += w["cost_usd"]
             creative, caption = w["creative"], w["caption"]
             warnings = list(w["warnings"])
-            images, _, _ = make_visuals(brand, post["format"], creative, products, photos, owner_note=note)
+            images, _, _, reel = make_visuals(brand, post["format"], creative, products, photos, owner_note=note)
         passed, problems, check_cost = checker.check(brand, images, ref, caption, ai_made, client=client)
         cost += check_cost
         if not passed:
@@ -134,10 +165,11 @@ def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | 
     warnings += notes
 
     return _save(brand, post, plan_row, creative, caption, images, warnings, cost, attempts, ai_made,
-                 replace_draft_id)
+                 replace_draft_id, reel)
 
 
-def _save(brand, post, plan_row, creative, caption, images, warnings, cost, attempts, ai_made, replace_id) -> int:
+def _save(brand, post, plan_row, creative, caption, images, warnings, cost, attempts, ai_made, replace_id,
+          reel: bytes | None = None) -> int:
     now = _now(brand).isoformat(timespec="seconds")
     row = {
         "brand": brand.slug, "plan_id": plan_row["id"] if plan_row else None, "format": post["format"],
@@ -163,13 +195,18 @@ def _save(brand, post, plan_row, creative, caption, images, warnings, cost, atte
             conn.execute("UPDATE content_plan SET status = 'drafted' WHERE id = ?", (plan_row["id"],))
 
     folder = media.media_dir(brand.slug, "drafts", str(draft_id))
-    for old_file in folder.glob("*.jpg"):
+    for old_file in [*folder.glob("*.jpg"), *folder.glob("*.mp4")]:
         old_file.unlink()
+    root = media.media_dir(brand.slug).parent.parent
+    if reel:  # reel.mp4 first, then a cover still for thumbnails
+        files = [("reel.mp4", reel), ("cover.jpg", images[0])]
+    else:
+        files = [(f"{i}.jpg", img) for i, img in enumerate(images, 1)]
     paths = []
-    for i, img in enumerate(images, 1):
-        path = folder / f"{i}.jpg"
-        path.write_bytes(img)
-        paths.append(str(path.relative_to(media.media_dir(brand.slug).parent.parent)))
+    for name, data in files:
+        path = folder / name
+        path.write_bytes(data)
+        paths.append(str(path.relative_to(root)))
     with connect() as conn:
         conn.execute("UPDATE drafts SET media_paths = ? WHERE id = ?", (json.dumps(paths), draft_id))
     if brand.auto_publish and not warnings:
@@ -193,6 +230,8 @@ def get_draft(brand: Brand, draft_id: int) -> dict | None:
     d["products"] = products_by_ids(brand, json.loads(d["product_ids"] or "[]"))
     d["when"] = datetime.fromisoformat(d["scheduled_for"]) if d["scheduled_for"] else None
     d["format_label"] = FORMAT_LABELS.get(d["format"], d["format"])
+    d["is_reel"] = bool(d["files"]) and d["files"][0].suffix == ".mp4"
+    d["thumb_n"] = 2 if d["is_reel"] else 1  # reels: file 1 is the video, file 2 its cover still
     return d
 
 
