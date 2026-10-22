@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Products{% endblock %}
+{% block body %}
+<div class="row-head">
+  <div><h1>Products</h1>
+    <p class="muted">What the agent knows from Shopify — only active, in-stock products are used in posts. Colours of the
+      same style are grouped together.
+      {% if last_sync %}Last fetched {{ last_sync.at[:16].replace("T", " ") }} UTC: {{ last_sync.total }} products,
+      {{ last_sync.in_stock }} active and in stock.{% endif %}</p></div>
+  <form method="post" action="{{ url_for('run_action', action='sync') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('products_page') }}">
+    <button type="submit" data-busy="Starting…" {% if jobs.get('sync', {}).get('state') == 'running' %}disabled{% endif %}>
+      Get products from Shopify</button>
+  </form>
+</div>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+{% if jobs.get('sync', {}).get('state') == 'done' %}<div class="flash ok">✅ {{ jobs.sync.message }}</div>{% endif %}
+
+{% set problems = styles|map(attribute="issues")|sum(start=[]) %}
+{% if problems %}
+<div class="flash error"><b>Please fix in Shopify:</b> these look like mistakes. The agent ignores ₹0 prices in posts,
+  but customers may be able to buy at ₹0.
+  <ul>{% for i in problems %}<li>{{ i }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if styles %}
+<div class="styles">
+  {% for s in styles %}
+  <div class="style-card">
+    {% if s.image %}<img src="{{ s.image }}&width=400" alt="{{ s.title }}" loading="lazy">{% endif %}
+    <div class="body">
+      <b>{{ s.title }}</b>
+      <div>{% if s.price_from == s.price_to %}₹{{ '%g' % s.price_from }}{% else %}₹{{ '%g' % s.price_from }}–₹{{ '%g' % s.price_to }}{% endif %}
+        {% if s.mrp_from %}<span class="muted">· MRP from ₹{{ '%g' % s.mrp_from }}</span>{% endif %}</div>
+      <div class="muted">{% if s.pack_size %}{{ s.pack_size }}-pc pack · {% else %}<span class="warn-line">pack size unclear</span> · {% endif %}
+        {{ s.colourways }} colour{{ "s" if s.colourways != 1 }} · {{ s.stock }} in stock</div>
+      <div class="muted">Sizes: {{ s.sizes|join(", ") }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card muted">No products yet. Connect Shopify, then press <b>Get products from Shopify</b>.</div>
+{% endif %}
+{% endblock %}

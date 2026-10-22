@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block body %}
+<h1>{{ brand.name if brand else "Social Agent" }}</h1>
+<p class="muted">Your control center. Everything the agent needs is set up from here — no files to edit.</p>
+
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+
+{# ---- What to do next ---- #}
+<section class="card">
+  <h2>Next step</h2>
+  {% if next_service %}
+    <p>Connect <b>{{ next_service.title }}</b> — {{ next_service.purpose|lower }}
+       <span class="muted">(about {{ next_service.minutes }} min)</span></p>
+    <a class="btn" href="{{ url_for('connect') }}#{{ next_service.id }}">Connect {{ next_service.title }} →</a>
+  {% elif brand_todo %}
+    <p>{{ brand_todo[0][0] }}.</p>
+    <a class="btn" href="{{ url_for('brand_page') }}#{{ brand_todo[0][1] }}">Open Brand settings →</a>
+  {% else %}
+    <p>🎉 Setup is complete. The content buttons below switch on as each next part of the agent is built.</p>
+  {% endif %}
+</section>
+
+{# ---- Setup checklist ---- #}
+<section class="card">
+  <div class="row-head">
+    <h2>Setup</h2>
+    <span class="muted">{{ connected|length }} of {{ services|length }} accounts connected</span>
+  </div>
+  <div class="progress"><div style="width: {{ (100 * connected|length / services|length)|round|int }}%"></div></div>
+  <div style="margin-top:10px">
+    {% for s in services %}{% set r = results.get(s.id) %}
+    <div class="check">
+      <span class="mark">{{ "✅" if r and r.ok else ("❌" if r else "⬜") }}</span>
+      <div class="grow"><b>{{ s.title }}</b>
+        <div class="muted">{% if r %}{{ r.message }} <i>({{ r.at }})</i>{% else %}Not connected yet.{% endif %}</div></div>
+      <a href="{{ url_for('connect') }}#{{ s.id }}">{{ "Change" if r and r.ok else "Connect" }}</a>
+    </div>
+    {% endfor %}
+    {% for what, section in brand_todo %}
+    <div class="check">
+      <span class="mark">⬜</span><div class="grow"><b>{{ what }}</b></div>
+      <a href="{{ url_for('brand_page') }}#{{ section }}">Fix</a>
+    </div>
+    {% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('check_all') }}" class="actions">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button type="submit" class="secondary" data-busy="Checking all… (up to a minute)">Check all connections</button>
+    <span class="muted">Safe to press any time — nothing is posted.</span>
+  </form>
+</section>
+
+{# ---- Approval mode ---- #}
+{% if brand %}
+<section class="card">
+  <div class="row-head">
+    <div><h2>Approval mode</h2>
+      <div class="muted">{% if brand.auto_publish %}⚠️ Posts go out automatically without asking you.
+        {% else %}🔒 Nothing is posted until you press ✅ Approve on Telegram.{% endif %}</div></div>
+    <a href="{{ url_for('brand_page') }}#approval">Change</a>
+  </div>
+</section>
+{% endif %}
+
+{# ---- Updates ---- #}
+<section class="card" id="updates">
+  <div class="row-head">
+    <div><h2>Updates</h2>
+      <div class="muted">Installed version:
+        {% if version.sha %}{{ version.date }} ({{ version.message }}){% else %}not known yet (installed from a ZIP){% endif %}</div></div>
+  </div>
+  {% set u = jobs.get("update") %}
+  {% if u and u.state == "done" %}<div class="result ok">✅ {{ u.message }} Wait about 30 seconds, then refresh this page.</div>{% endif %}
+  {% if has_github %}
+  <div class="actions">
+    <form method="post" action="{{ url_for('check_updates') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit" class="secondary" data-busy="Checking…">Check for updates</button>
+    </form>
+    <form method="post" action="{{ url_for('run_action', action='update') }}"
+          onsubmit="return confirm('Install the newest version now? The agent restarts by itself (about 30 seconds). Your keys and settings are kept.')">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit" data-busy="Updating…" {% if u and u.state == "running" %}disabled{% endif %}>Update agent</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="muted">To install updates with one click, add a GitHub key: <a href="{{ url_for('connect') }}#github">Connect accounts → Updates</a>.</p>
+  {% endif %}
+</section>
+
+{# ---- Actions ---- #}
+<section class="card">
+  <h2>What the agent can do</h2>
+  <p class="muted">
+    {% if last_sync %}Products last fetched {{ last_sync.at[:16].replace("T", " ") }} UTC — {{ last_sync.total }} products.{% else %}Products not fetched yet.{% endif %}
+    {% if plan_count %}· <a href="{{ url_for('plan_page') }}">{{ plan_count }} posts planned</a>.{% endif %}
+    {% if next_plan %}· Next automatic plan: <b>{{ next_plan }}</b>.{% endif %}
+  </p>
+  <div class="grid">
+    {% for key, title, desc, phase in actions %}
+    {% set live = phase <= current_phase and key in ready %}
+    {% set j = jobs.get(key) %}
+    <div class="tile">
+      <div class="row-head"><b>{{ title }}</b>
+        {% if not live %}<span class="pill soon">coming in phase {{ "2b" if phase == 2.5 else phase }}</span>{% endif %}</div>
+      <div class="muted">{{ desc }}</div>
+      {% if j and j.state == "done" %}<div class="result ok">✅ {{ j.message }} <span class="muted">({{ j.at }})</span></div>{% endif %}
+      {% if live and key == "queue" %}
+      <div class="muted">{{ queued }} post(s) waiting.</div>
+      <form><a class="btn" href="{{ url_for('queue_page') }}">See scheduled posts</a></form>
+      {% elif live and key == "stats" %}
+      <form><a class="btn" href="{{ url_for('performance_page') }}">See performance</a></form>
+      {% elif live and key == "pause" %}
+      <div class="{{ 'warn-line' if paused else 'muted' }}">{{ "⏸ Posting is paused." if paused else "▶️ Posting is on." }}</div>
+      <form method="post" action="{{ url_for('run_action', action='resume' if paused else 'pause') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button type="submit" class="{{ '' if paused else 'secondary' }}">{{ "Resume posting" if paused else "Pause all posting" }}</button>
+      </form>
+      {% elif live %}
+      <form method="post" action="{{ url_for('run_action', action=key) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        {% if key == "reel" %}<div class="muted" style="margin-bottom:6px">{{ reels_made }} of {{ reel_cap }} reels used this week.</div>{% endif %}
+        {% if key in ("image", "reel") %}
+        <select name="style_id" required style="margin-bottom:8px" aria-label="Product">
+          {% for s in styles %}<option value="{{ s.id }}">{{ s.title }}</option>{% else %}<option value="">Get products first</option>{% endfor %}
+        </select>
+        <input type="text" name="note" placeholder="Optional idea, e.g. monsoon travel kit" style="margin-bottom:8px">
+        {% endif %}
+        <button type="submit" {% if j and j.state == "running" %}disabled{% endif %} data-busy="Starting…">
+          {{ "Working…" if j and j.state == "running" else title }}</button>
+      </form>
+      {% else %}
+      <form><button type="button" disabled>{{ title }}</button></form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

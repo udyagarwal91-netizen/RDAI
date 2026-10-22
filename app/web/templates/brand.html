@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Brand{% endblock %}
+{% macro save(label="Save") %}
+  <div class="actions"><button type="submit">{{ label }}</button></div>
+{% endmacro %}
+{% macro csrf() %}<input type="hidden" name="csrf" value="{{ csrf_token() }}">{% endmacro %}
+{% block body %}
+{% if not brand %}
+  <h1>Brand</h1><div class="flash error">{{ brand_error }}</div>
+{% else %}
+<h1>Brand settings</h1>
+<p class="muted">Everything about how {{ brand.name }} looks, sounds and posts. Each box has its own Save button.</p>
+<div class="toc">
+  <a href="#basics">Store &amp; accounts</a><a href="#schedule">Posting days</a><a href="#mix">Content mix</a>
+  <a href="#look">Colours &amp; logo</a><a href="#ai">AI images</a><a href="#voice">Voice &amp; hashtags</a><a href="#safety">Banned words</a>
+  <a href="#festivals">Sale days</a><a href="#approval">Approval mode</a><a href="#rules">Brand rules</a>
+</div>
+
+{# ---------- Store & accounts ---------- #}
+<section class="card" id="basics">
+  <h2>Store &amp; accounts</h2>
+  <form method="post" action="{{ url_for('brand_save', section='basics') }}">{{ csrf() }}
+    <div class="two">
+      <label>Brand name <input type="text" name="name" value="{{ c.brand.name }}" required></label>
+      <label>Website <input type="text" name="website" value="{{ c.brand.website or '' }}"></label>
+    </div>
+    <label>Tagline <span class="muted">(optional)</span>
+      <input type="text" name="tagline" value="{{ c.brand.tagline or '' }}"></label>
+    <label>Shopify store address <span class="muted">— paste your Shopify admin web address</span>
+      <input type="text" name="store_domain" value="{{ store_domain }}" placeholder="admin.shopify.com/store/your-store"></label>
+    <div class="two">
+      <label>Facebook Page ID <span class="muted">— filled in by the Instagram + Facebook test</span>
+        <input type="text" name="facebook_page_id" value="{{ c.meta.facebook_page_id or '' }}" inputmode="numeric"></label>
+      <label>Instagram account ID <span class="muted">— filled in automatically</span>
+        <input type="text" name="instagram_account_id" value="{{ c.meta.instagram_account_id or '' }}" inputmode="numeric"></label>
+    </div>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Posting days ---------- #}
+<section class="card" id="schedule">
+  <h2>Posting days &amp; times</h2>
+  <p class="muted">Tick the days to post and pick a time (India time). One post per ticked day.</p>
+  <form method="post" action="{{ url_for('brand_save', section='schedule') }}">{{ csrf() }}
+    {% for day in f.DAYS %}
+    <div class="day-row">
+      <label><input type="checkbox" name="day_{{ day }}" {% if day in slots %}checked{% endif %}> {{ f.DAY_NAMES[day] }}</label>
+      <input type="time" name="time_{{ day }}" value="{{ slots.get(day, '19:30') }}">
+    </div>
+    {% endfor %}
+    <div class="two">
+      <label>Make the weekly plan on
+        <select name="plan_day">{% for day in f.DAYS %}<option value="{{ day }}" {% if c.schedule.plan_day == day %}selected{% endif %}>{{ f.DAY_NAMES[day] }}</option>{% endfor %}</select></label>
+      <label>at <input type="time" name="plan_time" value="{{ c.schedule.plan_time or '10:00' }}"></label>
+    </div>
+    <label>Plan ahead for
+      <select name="plan_horizon_days">
+        <option value="7" {% if c.schedule.plan_horizon_days|int == 7 %}selected{% endif %}>1 week</option>
+        <option value="14" {% if c.schedule.plan_horizon_days|int == 14 %}selected{% endif %}>2 weeks</option>
+      </select></label>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Content mix ---------- #}
+<section class="card" id="mix">
+  <h2>Content mix</h2>
+  <form method="post" action="{{ url_for('brand_save', section='mix') }}" oninput="sumUp(this)">{{ csrf() }}
+    <div class="two">
+      <div>
+        <h3>What posts are about <span class="muted">(must total 100%)</span></h3>
+        {% set labels = {"product": "Product (a specific pack)", "offer": "Offers (real Shopify prices only)",
+                         "education": "Education (fabric, fit, care)", "lifestyle": "Lifestyle (everyday routines)"} %}
+        {% for t in f.THEMES %}
+        <div class="mix-row"><span>{{ labels[t] }}</span>
+          <input type="number" min="0" max="100" name="theme_{{ t }}" data-group="themes" value="{{ c.content_mix.themes.get(t, 0) }}"></div>
+        {% endfor %}
+        <div class="total" id="total-themes"></div>
+      </div>
+      <div>
+        <h3>How posts look <span class="muted">(must total 100%)</span></h3>
+        {% set flabels = {"template_image": "Brand template image", "carousel": "Carousel (3–5 slides)",
+                          "gemini_image": "AI image (Gemini)", "gemini_reel": "AI reel (Veo)"} %}
+        {% for fm in f.FORMATS %}
+        <div class="mix-row"><span>{{ flabels[fm] }}</span>
+          <input type="number" min="0" max="100" name="format_{{ fm }}" data-group="formats" value="{{ c.content_mix.formats.get(fm, 0) }}"></div>
+        {% endfor %}
+        <div class="total" id="total-formats"></div>
+      </div>
+    </div>
+    <label>Maximum reels per week <span class="muted">— reels are slow and cost the most</span>
+      <input type="number" min="0" max="14" name="max_reels_per_week" value="{{ c.content_mix.max_reels_per_week }}" style="max-width:120px"></label>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Look ---------- #}
+<section class="card" id="look">
+  <h2>Colours, fonts &amp; logo</h2>
+  <form method="post" action="{{ url_for('brand_save', section='look') }}">{{ csrf() }}
+    <h3>Brand colours <span class="muted">— click a box to pick</span></h3>
+    {% set clabels = {"primary": "Main", "secondary": "Background", "accent": "Price / button",
+                      "text_dark": "Dark text", "text_light": "Light text"} %}
+    <div class="swatches">
+      {% for name in f.COLORS %}
+      <label><span class="muted">{{ clabels[name] }}</span>
+        <input type="color" name="color_{{ name }}" value="{{ c.style.colors.get(name, '#000000') }}"></label>
+      {% endfor %}
+      <label><span class="muted">Behind product photos</span>
+        <input type="color" name="color_product_photo_backdrop" value="{{ c.style.product_photo_backdrop or '#FFFFFF' }}"></label>
+    </div>
+    <div class="two">
+      <label>Heading font <span class="muted">(a Google Fonts name)</span>
+        <input type="text" name="font_heading" value="{{ c.style.fonts.heading }}"></label>
+      <label>Body font <input type="text" name="font_body" value="{{ c.style.fonts.body }}"></label>
+    </div>
+    {{ save("Save colours & fonts") }}
+  </form>
+
+  <h3>Logo</h3>
+  <div class="two">
+    {% for which, label, present in [("main", "Main logo (transparent PNG best)", has_logo),
+                                       ("white", "White logo for dark backgrounds (optional)", has_logo_white)] %}
+    <form method="post" action="{{ url_for('brand_save', section='logo') }}" enctype="multipart/form-data">{{ csrf() }}
+      <input type="hidden" name="which" value="{{ which }}">
+      <div class="muted">{{ label }}</div>
+      {% if present %}<p><img class="logo-preview" src="{{ url_for('brand_logo', which=which) }}" alt="{{ label }}"></p>
+      {% else %}<p class="muted">No logo uploaded yet.</p>{% endif %}
+      <input type="file" name="logo" accept="image/png,image/jpeg,image/webp">
+      <div class="actions"><button type="submit" class="secondary">Upload</button></div>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+
+{# ---------- AI images ---------- #}
+{% set ai = c.ai_images or {} %}
+<section class="card" id="ai">
+  <h2>AI images</h2>
+  <p class="muted">Gemini makes these from your real product photo. The agent picks the style that suits each post,
+    from the ones you allow. Every image is checked for accuracy and anything suggestive before you see it.</p>
+  <form method="post" action="{{ url_for('brand_save', section='ai') }}">{{ csrf() }}
+    <h3>Styles the agent may use</h3>
+    {% for key, label in f.AI_STYLES.items() %}
+    <label style="font-weight:400"><input type="checkbox" name="style_{{ key }}"
+      {% if key in (ai.allowed_styles or f.AI_STYLES.keys()|list) %}checked{% endif %}> {{ label }}</label>
+    {% endfor %}
+    <div class="two">
+      <label>Image model
+        <select name="model">{% for key, label in f.AI_MODELS.items() %}<option value="{{ key }}" {% if (ai.model or 'gemini-nano-banana-2.1') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label>Quality
+        <select name="image_size">{% for key, label in f.AI_SIZES.items() %}<option value="{{ key }}" {% if (ai.image_size or '2K') == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    </div>
+    <label>Text at the bottom of brand images
+      <input type="text" name="cta_short" value="{{ c.style.cta_short or 'Shop the pack · link in bio' }}"></label>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Voice ---------- #}
+<section class="card" id="voice">
+  <h2>Voice &amp; hashtags</h2>
+  <form method="post" action="{{ url_for('brand_save', section='voice') }}">{{ csrf() }}
+    <div class="two">
+      <label>Caption language
+        <select name="language">{% for l in f.LANGUAGES %}<option {% if c.voice.language == l %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+      <label>How often to use a Hinglish hook (%)
+        <input type="number" min="0" max="100" name="hinglish_share_percent" value="{{ c.voice.hinglish_share_percent or 0 }}"></label>
+    </div>
+    <label>Tone of voice <textarea name="tone">{{ c.voice.tone }}</textarea></label>
+    <div class="two">
+      <label>Caption length <input type="text" name="caption_length" value="{{ c.voice.caption_length }}"></label>
+      <label>Emojis
+        <select name="emoji_level">{% for e in f.EMOJI_LEVELS %}<option {% if c.voice.emoji_level == e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></label>
+    </div>
+    <label>Call to action at the end of captions
+      <input type="text" name="call_to_action" value="{{ c.voice.call_to_action }}"></label>
+    <h3>Hashtags <span class="muted">— separate with commas</span></h3>
+    <label>On every post <input type="text" name="hashtags_always" value="{{ c.hashtags.always|join(', ') }}"></label>
+    {% for name in f.HASHTAG_SETS %}
+    <label>{{ name|title }} posts <input type="text" name="hashtags_{{ name }}" value="{{ c.hashtags.sets.get(name, [])|join(', ') }}"></label>
+    {% endfor %}
+    <label>Maximum hashtags per post
+      <input type="number" min="0" max="30" name="hashtags_max" value="{{ c.hashtags.max_per_post }}" style="max-width:120px"></label>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Safety ---------- #}
+<section class="card" id="safety">
+  <h2>Banned words</h2>
+  <form method="post" action="{{ url_for('brand_save', section='safety') }}">{{ csrf() }}
+    <div class="two">
+      <label>Never use these <span class="muted">(one per line)</span>
+        <textarea name="banned_words">{{ (c.banned_words or [])|join('\n') }}</textarea></label>
+      <label>Only if Shopify proves it <span class="muted">(e.g. "free", "sale")</span>
+        <textarea name="needs_proof_words">{{ (c.needs_proof_words or [])|join('\n') }}</textarea></label>
+    </div>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Festivals ---------- #}
+<section class="card" id="festivals">
+  <h2>Your sale days &amp; special dates</h2>
+  <p class="muted">The planner already knows the big festivals (Diwali, Republic Day, Holi…). Add your own sale days
+    here — one per line: <code>2026-11-20 | Winter Sale | 10% off on 3-pc packs</code>. Only put offers that are
+    really set up in Shopify.</p>
+  <form method="post" action="{{ url_for('brand_save', section='festivals') }}">{{ csrf() }}
+    <textarea name="custom_dates" placeholder="2026-11-20 | Winter Sale | note">{% for d in (c.festivals or {}).get('custom_dates') or [] %}{{ d.date }} | {{ d.name }}{% if d.note %} | {{ d.note }}{% endif %}
+{% endfor %}</textarea>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Approval ---------- #}
+<section class="card" id="approval">
+  <h2>Approval mode</h2>
+  <form method="post" action="{{ url_for('brand_save', section='approval') }}">{{ csrf() }}
+    <label class="switch"><input type="checkbox" name="auto_publish" {% if brand.auto_publish %}checked{% endif %}
+      onchange="if (this.checked && !confirm('Posts will go out WITHOUT your approval. Are you sure?')) this.checked = false;">
+      Post automatically without asking me</label>
+    <p class="muted">Recommended: keep this off. You'll get every draft on Telegram and nothing goes out until you press ✅.</p>
+    {{ save() }}
+  </form>
+</section>
+
+{# ---------- Rules ---------- #}
+<section class="card" id="rules">
+  <h2>Brand rules</h2>
+  <p class="muted">Written in plain English. The agent reads all of this before planning or writing every post.</p>
+  <form method="post" action="{{ url_for('brand_save', section='rules') }}">{{ csrf() }}
+    <textarea class="big" name="rules">{{ brand.rules }}</textarea>
+    {{ save("Save brand rules") }}
+  </form>
+</section>
+
+<script>
+function sumUp(form) {
+  for (const group of ["themes", "formats"]) {
+    const total = [...form.querySelectorAll(`[data-group=${group}]`)].reduce((a, i) => a + (+i.value || 0), 0);
+    const el = document.getElementById("total-" + group);
+    el.textContent = `Total: ${total}%` + (total === 100 ? " ✓" : " — needs to be 100%");
+    el.className = "total" + (total === 100 ? "" : " bad");
+  }
+}
+sumUp(document.querySelector("#mix form"));
+</script>
+{% endif %}
+{% endblock %}

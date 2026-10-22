@@ -1,0 +1,23 @@
+{#- Single brand image: real product photo on a clean card, headline, Shopify price. -#}
+{% extends "_base.html" %}
+{% block style %}
+  .card { flex: 1; margin: 36px 0 36px; }
+  h1 { font-size: 72px; line-height: 1.02; color: var(--primary); font-weight: 800; }
+  .sub { font-size: 32px; margin-top: 14px; color: var(--dark); opacity: .85; }
+  .row { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+{% endblock %}
+{% block body %}
+  <div class="top">
+    <div class="logo">{% if logo %}<img src="{{ logo }}">{% else %}<span>{{ brand_name }}</span>{% endif %}</div>
+    {% if badge %}<div class="badge">{{ badge }}</div>{% endif %}
+  </div>
+  <div class="card"><img src="{{ photo }}"></div>
+  <div class="row">
+    <div>
+      <h1>{{ headline }}</h1>
+      {% if subline %}<div class="sub">{{ subline }}</div>{% endif %}
+    </div>
+    {% if price %}<div class="price">{{ price }}{% if mrp %} <s>{{ mrp }}</s>{% endif %}</div>{% endif %}
+  </div>
+  <div class="foot" style="margin-top: 28px"><span>{{ cta }}</span><span>{{ website }}</span></div>
+{% endblock %}

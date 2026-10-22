@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Connect accounts{% endblock %}
+{% block body %}
+<h1>Connect accounts</h1>
+<p class="muted">Five accounts, one at a time. Follow the steps in each box, paste what it asks for, and press
+  <b>Save &amp; test</b>. Keys are stored privately on this computer and never shown in full again.</p>
+
+{% if on_host %}
+<div class="flash warn">You're on a hosting service. Keys saved here can be lost when the app restarts —
+  also paste them in the host's <b>Variables</b> screen (see docs/DEPLOY.md).</div>
+{% endif %}
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+<div class="toc">
+  {% for card in cards %}<a href="#{{ card.service.id }}">{{ "✅" if card.result and card.result.ok else loop.index }}
+    {{ card.service.title }}</a>{% endfor %}
+</div>
+
+{% for card in cards %}{% set s = card.service %}{% set r = card.result %}
+<section class="card" id="{{ s.id }}">
+  <div class="row-head">
+    <div><h2>{{ loop.index }}. {{ s.title }}</h2>
+      <div class="muted">{{ s.purpose }} · {{ s.cost }} · about {{ s.minutes }} min</div></div>
+    {% if r %}<span class="pill {{ 'ok' if r.ok else 'err' }}">{{ "Connected" if r.ok else "Needs attention" }}</span>
+    {% else %}<span class="pill soon">Not connected</span>{% endif %}
+  </div>
+
+  {% if r %}<div class="result {{ 'ok' if r.ok else 'err' }}">{{ "✅" if r.ok else "❌" }} {{ r.message }}
+    <span class="muted">— checked {{ r.at }}</span></div>{% endif %}
+
+  <details {% if not (r and r.ok) %}open{% endif %}>
+    <summary>Show me how, step by step</summary>
+    <ol class="steps">{% for step in s.steps %}<li>{{ step|safe }}</li>{% endfor %}</ol>
+  </details>
+
+  <form method="post" action="{{ url_for('connect_save', service_id=s.id) }}" autocomplete="off">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {% if s.id == "shopify" %}
+    <label>Store address <span class="muted">— paste your Shopify admin web address, or the .myshopify.com name</span>
+      <input type="text" name="store_domain" value="{{ store_domain }}"
+             placeholder="admin.shopify.com/store/your-store"></label>
+    {% endif %}
+    {% for f in card.fields %}
+    <label>{{ f.spec.label }}{% if f.spec.optional %} <span class="muted">(optional)</span>{% endif %}
+      {% if f.is_set %}<span class="pill set">saved: {{ f.display }}</span>{% endif %}
+      <input type="{{ 'password' if f.spec.secret else 'text' }}" name="{{ f.spec.name }}" autocomplete="off"
+             placeholder="{{ 'Leave empty to keep the saved one' if f.is_set else 'Paste here' }}"></label>
+    {% if f.is_set %}<label class="muted" style="font-weight:400; margin-top:4px">
+      <input type="checkbox" name="clear_{{ f.spec.name }}"> remove the saved {{ f.spec.label|lower }}</label>{% endif %}
+    {% endfor %}
+    <div class="actions">
+      <button type="submit" data-busy="Testing…">Save &amp; test</button>
+      <span class="muted">Only checks the connection — nothing is posted or changed.</span>
+    </div>
+  </form>
+</section>
+{% endfor %}
+{% endblock %}

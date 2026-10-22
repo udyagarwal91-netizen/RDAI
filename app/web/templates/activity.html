@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block body %}
+<h1>Activity</h1>
+<p class="muted">Everything the agent did, newest first. Keys are always hidden here.</p>
+{% if files %}
+<form method="get" class="actions">
+  <select name="day" onchange="this.form.submit()" style="max-width:220px" aria-label="Day">
+    {% for name in files %}<option value="{{ name }}" {% if name == chosen %}selected{% endif %}>{{ name[:-4] }}</option>{% endfor %}
+  </select>
+  <a href="{{ url_for('activity', day=chosen) }}" class="btn secondary">Refresh</a>
+</form>
+<div class="card">
+  <div class="log">{% for line in lines %}<div class="{{ 'error' if '  ERROR  ' in line else ('warn' if '  WARNING' in line else '') }}">{{ line }}</div>{% else %}Nothing logged yet on this day.{% endfor %}</div>
+</div>
+{% else %}
+<div class="card muted">No activity yet.</div>
+{% endif %}
+{% endblock %}

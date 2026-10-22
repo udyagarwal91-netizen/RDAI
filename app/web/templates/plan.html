@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Plan{% endblock %}
+{% block body %}
+<div class="row-head">
+  <div><h1>Content plan</h1>
+    <p class="muted">What the agent intends to post. Prices and pack sizes shown here come straight from Shopify.
+      {% if next_plan %}Next automatic plan: <b>{{ next_plan }}</b>.{% endif %}</p></div>
+  <div class="actions" style="margin-top:0">
+    <form method="post" action="{{ url_for('run_action', action='plan') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('plan_page') }}">
+      <button type="submit" data-busy="Starting…" {% if jobs.get('plan', {}).get('state') == 'running' %}disabled{% endif %}>
+        {{ "Make a new plan" if rows else "Make this week's plan" }}</button>
+    </form>
+    {% if rows %}
+    <form method="post" action="{{ url_for('run_action', action='send_plan') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('plan_page') }}">
+      <button type="submit" class="secondary" data-busy="Sending…">Send to Telegram</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+{% if jobs.get('plan', {}).get('state') == 'done' %}<div class="flash ok">✅ {{ jobs.plan.message }}</div>{% endif %}
+
+<section class="card">
+  {% for r in rows %}
+  <div class="plan-item">
+    {% set p = r.products[0] if r.products else None %}
+    {% if p and p.image %}<img class="thumb" src="{{ p.image }}&width=200" alt="{{ p.title }}" loading="lazy">
+    {% else %}<div class="thumb empty">no photo</div>{% endif %}
+    <div>
+      <b>{{ r.when.strftime("%a %d %b, %I:%M %p") }}</b>
+      <div class="meta"><span class="pill soon">{{ r.format_label }}</span><span class="pill soon">{{ r.theme|title }}</span>
+        {% if r.status != "planned" %}<span class="pill ok">{{ r.status }}</span>{% endif %}</div>
+      {% for p in r.products %}<div>🛍 {{ p.title }}{% if p.pack_size %} ({{ p.pack_size }}-pc){% endif %} —
+        <b>{{ price_text(p) }}</b>{% if p.mrp %} <span class="muted">MRP from ₹{{ '%g' % p.mrp }}</span>{% endif %}</div>{% endfor %}
+      <div>💡 {{ r.idea }}</div>
+      {% if r.hook %}<div>🪝 “{{ r.hook }}”</div>{% endif %}
+      {% if r.why %}<div class="muted">Why: {{ r.why }}</div>{% endif %}
+      {% for w in r.warnings %}<div class="warn-line">⚠️ {{ w }}</div>{% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No plan yet. Press <b>Make this week's plan</b> — it takes about a minute. The plan is also made
+    automatically every week at the time set on Brand → Posting days.</p>
+  {% endfor %}
+</section>
+{% endblock %}
