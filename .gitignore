@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Live business database - back it up, don't commit it
+data/*.db
+data/*.db-*
