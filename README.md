@@ -24,8 +24,18 @@ It also tracks every issue challan: what each stitcher still owes, and which boo
 
 ## Start it
 
-* Windows: double-click `run_app.bat` (needs Python 3.10+ installed)
-* Linux/Mac: `./run_app.sh`
+**Office computer (no Python needed):** download `RDAI-windows.zip` from the GitHub Releases page
+(or the latest "Build Windows app" run -> Artifacts), extract it, double-click `RDAI.exe`.
+A black window opens and the app opens in the browser. Close the black window to stop.
+
+For developers: `./run_app.sh` (Linux/Mac) or `run_app.bat` (Windows with Python).
+
+## Ask RDAI (assistant)
+
+Chat page that answers questions from the stock engine ("stock of Colin Classic Trunk 90?",
+"what does each stitcher owe?") and helps enter challans, receipts and sales. Anything that
+changes data is shown as a proposal and saved only when you click **Confirm**.
+Needs internet and a Claude API key (Settings page).
 
 It opens in the browser at http://localhost:8501. To let other office computers use it, run
 `streamlit run app.py --server.address 0.0.0.0` and open `http://<this-computer-ip>:8501`.

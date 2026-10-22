@@ -1,11 +1,12 @@
 """RDAI stock app - staff screen.  Run:  streamlit run app.py"""
 import datetime as dt
+import os
 
 import pandas as pd
 import streamlit as st
 
-from rdai import physical, production as prod, stock
-from rdai.db import CHALLAN_KINDS, STOCK_TYPES, connect
+from rdai import agent, physical, production as prod, stock
+from rdai.db import CHALLAN_KINDS, STOCK_TYPES, connect, get_setting, set_setting
 from rdai.io_excel import (TEMPLATE_HELP, apply_mapping, guess_mapping, read_table, template_bytes,
                            to_excel_bytes)
 from rdai.masters import (add_alias, find_product, get_or_create_product, list_products, list_stitchers,
@@ -23,8 +24,8 @@ def get_conn():
 conn = get_conn()
 today = dt.date.today()
 
-PAGES = ["Closing Stock", "Challans (Inward/Outward)", "Pending with Stitchers", "Exceptions",
-         "Sales", "Opening Stock", "Physical Count & Tally", "Adjustments", "Masters"]
+PAGES = ["Ask RDAI", "Closing Stock", "Challans (Inward/Outward)", "Pending with Stitchers", "Exceptions",
+         "Sales", "Opening Stock", "Physical Count & Tally", "Adjustments", "Masters", "Settings"]
 page = st.sidebar.radio("Menu", PAGES)
 st.sidebar.caption("All stock is calculated in **pieces**. 1 unit = 10 pcs.")
 
@@ -129,7 +130,71 @@ def batches_section(kind):
 
 # ------------------------------------------------------------------ pages
 
-if page == "Closing Stock":
+if page == "Ask RDAI":
+    st.title("Ask RDAI")
+    api_key = get_setting(conn, "anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        st.info("To use the assistant, add your Claude API key once on the **Settings** page.")
+        st.stop()
+    model = get_setting(conn, "model", agent.DEFAULT_MODEL)
+    ss = st.session_state
+    ss.setdefault("chat_history", [])     # what is sent to Claude (append-only)
+    ss.setdefault("chat_display", [])     # what is shown on screen
+    ss.setdefault("proposals", [])
+
+    if not ss.chat_display:
+        st.caption("Try: *What is my closing stock of Colin Classic Trunk I/E today?* · *What does each stitcher "
+                   "owe me?* · *Which challans are still open?* · *I received challan 91 today, help me enter it.*")
+    for role, text in ss.chat_display:
+        with st.chat_message(role):
+            st.markdown(text)
+
+    for p in ss.proposals:
+        if p["status"] != "pending":
+            continue
+        with st.container(border=True):
+            st.markdown(f"**Confirm #{p['id']}:** {p['summary']}")
+            c1, c2, _ = st.columns([1, 1, 4])
+            if c1.button("Confirm", key=f"ok_{p['id']}", type="primary"):
+                try:
+                    res = agent.execute_proposal(conn, p)
+                    p["status"] = "confirmed and saved"
+                except ValueError as e:
+                    res = f"Could not save: {e}"
+                    p["status"] = "confirmed but failed"
+                agent.note_decision(ss.chat_history, p, res)
+                ss.chat_display.append(("assistant", ("✅ " if "saved" in p["status"] else "⚠️ ") + res))
+                st.rerun()
+            if c2.button("Cancel", key=f"no_{p['id']}"):
+                p["status"] = "cancelled by the user"
+                agent.note_decision(ss.chat_history, p, "Nothing was saved.")
+                ss.chat_display.append(("assistant", f"Cancelled #{p['id']} - nothing saved."))
+                st.rerun()
+
+    if prompt := st.chat_input("Ask about stock, challans, stitchers..."):
+        ss.chat_display.append(("user", prompt))
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant"), st.spinner("Checking the records..."):
+            try:
+                answer = agent.run_turn(conn, agent.make_client(api_key), ss.chat_history, prompt, ss.proposals,
+                                        model=model)
+            except agent.anthropic.AuthenticationError:
+                answer = "The API key was rejected. Check it on the Settings page."
+            except agent.anthropic.RateLimitError:
+                answer = "Too many requests right now - wait a minute and try again."
+            except agent.anthropic.APIConnectionError:
+                answer = "No internet connection to Claude. The rest of the app still works offline."
+            except agent.anthropic.APIStatusError as e:
+                answer = f"Claude API error ({e.status_code}). Try again in a moment."
+        ss.chat_display.append(("assistant", answer or "(no answer)"))
+        st.rerun()
+    if ss.chat_display and st.button("Start a new conversation"):
+        for k in ("chat_history", "chat_display", "proposals"):
+            ss[k] = []
+        st.rerun()
+
+elif page == "Closing Stock":
     st.title("Closing Stock")
     c1, c2, c3 = st.columns([1, 1, 2])
     as_of = c1.date_input("As of date", today)
@@ -520,3 +585,29 @@ elif page == "Masters":
         st.dataframe(pd.read_sql_query(
             "SELECT s.name, COUNT(c.challan_no) AS challans FROM stitchers s LEFT JOIN challans c "
             "ON c.stitcher_id = s.id GROUP BY s.id ORDER BY s.name", conn), width="stretch", hide_index=True)
+
+elif page == "Settings":
+    st.title("Settings")
+    st.subheader("Claude API key (for Ask RDAI)")
+    st.caption("Create a key at console.anthropic.com -> API Keys, add some credit, and paste it here. "
+               "It is stored only in this computer's database file. Each question costs a few rupees.")
+    has = bool(get_setting(conn, "anthropic_api_key"))
+    st.write("Status: " + ("key saved ✅" if has else "no key saved"))
+    k = st.text_input("Paste API key", type="password")
+    if st.button("Save key") and k.strip():
+        set_setting(conn, "anthropic_api_key", k.strip())
+        st.success("Saved.")
+        st.rerun()
+    if has and st.button("Remove key"):
+        set_setting(conn, "anthropic_api_key", None)
+        st.rerun()
+    st.subheader("Model")
+    cur = get_setting(conn, "model", agent.DEFAULT_MODEL)
+    m = st.selectbox("Claude model", list(agent.MODELS), index=list(agent.MODELS).index(cur),
+                     format_func=agent.MODELS.get)
+    if m != cur:
+        set_setting(conn, "model", m)
+        st.success("Saved.")
+    st.subheader("Data file")
+    st.code(os.path.abspath(conn.execute("PRAGMA database_list").fetchone()["file"]))
+    st.caption("Back up this one file daily (pen drive / Google Drive). It holds all your data.")

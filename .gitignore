@@ -5,3 +5,5 @@ __pycache__/
 # Live business database - back it up, don't commit it
 data/*.db
 data/*.db-*
+build/
+dist/

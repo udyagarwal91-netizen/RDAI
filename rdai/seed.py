@@ -12,7 +12,8 @@ from .production import add_line
 from .masters import get_or_create_stitcher
 from .units import to_pcs, units_to_pcs
 
-SEED_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "seed", "ledger_2026-04-01_to_2026-10-13.csv")
+SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed",
+                         "ledger_2026-04-01_to_2026-10-13.csv")
 
 
 def load_ledger_csv(conn, path=SEED_FILE, issue_date="2026-04-01", receipt_date="2026-10-13"):

@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS physical_count_lines (
     PRIMARY KEY (count_id, product_id, size, stock_type)
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key    TEXT PRIMARY KEY,
+    value  TEXT
+);
+
 CREATE INDEX IF NOT EXISTS ix_receipts_line ON receipts(line_id);
 CREATE INDEX IF NOT EXISTS ix_entries_sku ON stock_entries(product_id, size, stock_type);
 
@@ -144,3 +149,14 @@ def connect(path=None):
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
     return conn
+
+
+def get_setting(conn, key, default=None):
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row and row["value"] is not None else default
+
+
+def set_setting(conn, key, value):
+    with conn:
+        conn.execute("INSERT INTO app_settings(key, value) VALUES (?, ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
