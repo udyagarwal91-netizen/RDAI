@@ -1,4 +1,5 @@
 """Agent loop tests with a scripted fake Claude client (no network, no API key)."""
+import json
 from types import SimpleNamespace as NS
 
 import pytest
@@ -47,7 +48,10 @@ def test_read_tool_round_trip(conn):
     assert out == "You have 3,941 pcs."
     # the engine's number reached Claude in the tool result
     tool_result = fc.requests[1]["messages"][-1]["content"][0]
-    assert '"totals_by_stock_type_pcs"' in tool_result["content"] and "3941" in tool_result["content"]
+    payload = json.loads(tool_result["content"])
+    totals = payload["totals_by_stock_type_pcs"]
+    assert totals["FRESH"] + totals["LOOSE"] == 3941  # 739 + 1643 + 1559 pcs received
+    assert {"boxes", "loose_pcs", "fresh_total_pcs"} <= set(payload["fresh_summary"][0])
     assert fc.requests[0]["fallbacks"] == "default" and fc.requests[0]["model"] == "claude-opus-5-5"
     # history is append-only: user, assistant(tool_use), user(tool_result), assistant(text)
     assert [m["role"] for m in history] == ["user", "assistant", "user", "assistant"]
@@ -80,7 +84,9 @@ def test_write_tools_only_propose_until_confirmed(conn):
 
     agent.execute_proposal(conn, proposals[0])
     cs = stock.closing_stock(conn, "2026-10-22", product="Just Joey Ladla Drawer").set_index("stock_type")
-    assert cs.loc["FRESH", "closing_pcs"] == 555 and cs.loc["SECOND", "closing_pcs"] == 5
+    # 55.5 units = 55 boxes + 5 loose
+    assert cs.loc["FRESH", "closing_pcs"] == 550 and cs.loc["LOOSE", "closing_pcs"] == 5
+    assert cs.loc["SECOND", "closing_pcs"] == 5
 
 
 def test_invalid_proposal_returns_error_to_claude(conn):

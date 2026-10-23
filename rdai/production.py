@@ -8,7 +8,7 @@ open it is the quantity still with the stitcher; after closing it is a book erro
 import pandas as pd
 
 from .masters import get_or_create_product, get_or_create_stitcher, normalize_size, size_sort_key
-from .units import to_pcs, units_to_pcs
+from .units import split_pcs, to_pcs, units_to_pcs
 
 
 def create_challan(conn, challan_no, issue_date, kind, stitcher, lines, note=None):
@@ -60,19 +60,25 @@ def _line_kind(conn, line_id):
 
 
 def add_receipt(conn, line_id, receipt_date, received_units=0, addas_pcs=0, short_pcs=0, unfinished_pcs=0,
-                note=None, received_pcs=None):
-    """Record goods coming back from the stitcher. received in units (or received_pcs), rest in pieces."""
+                note=None, received_pcs=None, loose_pcs=0):
+    """Record goods coming back from the stitcher.
+
+    received_units: fresh received in units (or received_pcs in pieces). Whole units are full boxes;
+    a decimal part is loose pieces (50.5 -> 50 boxes + 5 loose). loose_pcs adds more loose pieces.
+    Addas, short and unfinished are in pieces."""
     kind = _line_kind(conn, line_id)
     if kind != "STITCHING":
         raise ValueError(f"Receipts can only be recorded against STITCHING challans (this one is {kind})")
-    rec = received_pcs if received_pcs is not None else units_to_pcs(received_units)
-    vals = (rec, to_pcs(addas_pcs), to_pcs(short_pcs), to_pcs(unfinished_pcs))
+    fresh = received_pcs if received_pcs is not None else units_to_pcs(received_units)
+    boxed, loose = split_pcs(fresh)
+    loose += to_pcs(loose_pcs)
+    vals = (boxed, loose, to_pcs(addas_pcs), to_pcs(short_pcs), to_pcs(unfinished_pcs))
     if not any(vals):
         raise ValueError("Nothing to record - all quantities are zero")
     with conn:
         return conn.execute(
-            "INSERT INTO receipts(line_id, receipt_date, received_pcs, addas_pcs, short_pcs, unfinished_pcs, note) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO receipts(line_id, receipt_date, received_pcs, loose_pcs, addas_pcs, short_pcs, "
+            "unfinished_pcs, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (line_id, str(receipt_date), *vals, note or None),
         ).lastrowid
 
@@ -123,7 +129,8 @@ def delete_receipt(conn, receipt_id):
 LINE_SQL = """
 SELECT l.id AS line_id, c.challan_no, c.issue_date, c.kind, COALESCE(s.name, '') AS stitcher,
        p.name AS product, l.size, l.issued_pcs,
-       COALESCE(SUM(r.received_pcs), 0)   AS received_pcs,
+       COALESCE(SUM(r.received_pcs + r.loose_pcs), 0) AS received_pcs,
+       COALESCE(SUM(r.loose_pcs), 0)      AS loose_pcs,
        COALESCE(SUM(r.addas_pcs), 0)      AS addas_pcs,
        COALESCE(SUM(r.short_pcs), 0)      AS short_pcs,
        COALESCE(SUM(r.unfinished_pcs), 0) AS unfinished_pcs,

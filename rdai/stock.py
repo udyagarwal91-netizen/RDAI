@@ -2,8 +2,9 @@
 
 Closing stock (per product, size, stock type) as of a date =
     opening + received from stitchers - sales +/- adjustments
-where FRESH gets received good pieces, SECOND gets addas pieces and UNFINISHED
-gets unfinished panels.
+where FRESH gets received good pieces in full boxes, LOOSE gets loose good pieces,
+SECOND gets addas pieces and UNFINISHED gets unfinished panels.
+Fresh total = FRESH (boxes) + LOOSE.
 """
 import hashlib
 
@@ -11,12 +12,13 @@ import pandas as pd
 
 from .db import STOCK_TYPES
 from .masters import find_product, get_or_create_product, normalize_size, size_sort_key
-from .units import to_pcs, units_to_pcs
+from .units import split_pcs, to_pcs, units_to_pcs
 
 
 def _check_type(stock_type):
     st = str(stock_type or "FRESH").strip().upper()
-    st = {"ADDAS": "SECOND", "SECONDS": "SECOND", "UNFINISHED PANELS": "UNFINISHED"}.get(st, st)
+    st = {"ADDAS": "SECOND", "SECONDS": "SECOND", "UNFINISHED PANELS": "UNFINISHED", "BOXES": "FRESH",
+          "FRESH LOOSE": "LOOSE", "LOOSE PCS": "LOOSE", "LOOSE PIECES": "LOOSE"}.get(st, st)
     if st not in STOCK_TYPES:
         raise ValueError(f"Stock type must be one of {', '.join(STOCK_TYPES)}, got {stock_type!r}")
     return st
@@ -45,42 +47,70 @@ def add_adjustment(conn, entry_date, product, size, qty_pcs, stock_type, reason,
         return add_entry(conn, "ADJUSTMENT", entry_date, product, size, qty_pcs, stock_type, ref=ref, note=reason)
 
 
+def repack(conn, entry_date, product, size, boxes, direction):
+    """Move fresh stock between loose and boxed. Total fresh stock is unchanged.
+    PACK: 10 x boxes loose pieces packed into full boxes. OPEN: boxes opened into loose pieces."""
+    boxes = int(boxes)
+    if boxes <= 0:
+        raise ValueError("Number of boxes must be positive")
+    if direction not in ("PACK", "OPEN"):
+        raise ValueError("direction must be PACK or OPEN")
+    pcs = boxes * 10
+    sign = 1 if direction == "PACK" else -1
+    with conn:
+        add_entry(conn, "ADJUSTMENT", entry_date, product, size, -sign * pcs, "LOOSE", ref="REPACK",
+                  note=f"{'Packed' if sign > 0 else 'Opened'} {boxes} boxes", create_product=False)
+        add_entry(conn, "ADJUSTMENT", entry_date, product, size, sign * pcs, "FRESH", ref="REPACK",
+                  note=f"{'Packed' if sign > 0 else 'Opened'} {boxes} boxes", create_product=False)
+
+
 # ---------------------------------------------------------------- file imports
 
 def file_hash(data: bytes):
     return hashlib.sha256(data).hexdigest()
 
 
-def _qty_from_row(row):
-    """Quantity in pieces = Qty Units x 10 + Qty Pieces (either column may be blank)."""
-    return units_to_pcs(row.get("qty_units")) + to_pcs(row.get("qty_pcs"))
+def _blank(v):
+    return v is None or (isinstance(v, float) and v != v) or str(v).strip() == "" or str(v).strip().lower() == "nan"
+
+
+def split_qty(row, stock_type):
+    """Quantities for one upload row as [(stock_type, pcs)].
+
+    FRESH rows: 'Boxes (Units)' whole part = full boxes, decimal part = loose (50.5 -> 500 + 5),
+    plus 'Loose Pcs' as loose. Other stock types: Units x 10 + Loose Pcs, all of that type."""
+    total_units = units_to_pcs(row.get("qty_units"))
+    loose_col = to_pcs(row.get("loose_pcs"))
+    if stock_type == "FRESH":
+        boxed, loose = split_pcs(total_units)
+        return [(t, q) for t, q in (("FRESH", boxed), ("LOOSE", loose + loose_col)) if q]
+    q = total_units + loose_col
+    return [(stock_type, q)] if q else []
 
 
 def prepare_rows(df, kind, default_date=None):
-    """Validate a normalised DataFrame (columns: date, product, size, qty_units/qty_pcs, stock_type, ref).
-    Returns (rows, errors). Nothing is written."""
+    """Validate a normalised DataFrame (columns: date, product, size, qty_units, loose_pcs, stock_type, ref).
+    Returns (rows, errors). A fresh row can become two rows (boxes + loose). Nothing is written."""
     rows, errors = [], []
     for i, r in df.iterrows():
         line = i + 2  # header is row 1 in Excel
         try:
             d = r.get("date") if "date" in df.columns else None
-            if d is None or (isinstance(d, float) and d != d) or str(d).strip() == "":
+            if _blank(d):
                 if not default_date:
                     raise ValueError("date is missing")
                 d = default_date
             d = pd.to_datetime(d, dayfirst=True).date().isoformat()
             product = str(r.get("product", "")).strip()
-            if not product or product.lower() == "nan":
+            if _blank(product):
                 raise ValueError("product is missing")
             size = normalize_size(r.get("size", ""))
             if not size or size == "NAN":
                 raise ValueError("size is missing")
-            qty = _qty_from_row(r)
-            if qty == 0:
-                continue
-            rows.append(dict(date=d, product=product, size=size, qty_pcs=qty,
-                             stock_type=_check_type(r.get("stock_type") if isinstance(r.get("stock_type"), str) else "FRESH"),
-                             ref=None if pd.isna(r.get("ref", None)) else str(r.get("ref"))))
+            st = _check_type(None if _blank(r.get("stock_type")) else r.get("stock_type"))
+            ref = None if _blank(r.get("ref")) else str(r.get("ref"))
+            for stype, qty in split_qty(r, st):
+                rows.append(dict(date=d, product=product, size=size, qty_pcs=qty, stock_type=stype, ref=ref))
         except ValueError as e:
             errors.append(f"Row {line}: {e}")
     return rows, errors
@@ -153,6 +183,24 @@ def closing_stock(conn, as_of, stock_type=None, product=None):
     df["closing_units"] = df["closing_pcs"] / 10
     df["_s"] = df["size"].map(size_sort_key)
     return df.sort_values(["stock_type", "product", "_s"]).drop(columns="_s").reset_index(drop=True)
+
+
+def fresh_summary(df):
+    """From a closing_stock frame: per product/size -> boxes, loose pcs, total fresh pcs."""
+    f = df[df["stock_type"].isin(["FRESH", "LOOSE"])]
+    if f.empty:
+        return pd.DataFrame(columns=["product", "size", "boxes", "loose_pcs", "fresh_total_pcs"])
+    p = f.pivot_table(index=["product", "size"], columns="stock_type", values="closing_pcs", aggfunc="sum",
+                      fill_value=0).reset_index()
+    for c in ("FRESH", "LOOSE"):
+        if c not in p.columns:
+            p[c] = 0
+    p["boxes"] = p["FRESH"] // 10
+    p["loose_pcs"] = p["LOOSE"]
+    p["fresh_total_pcs"] = p["FRESH"] + p["LOOSE"]
+    p["_s"] = p["size"].map(size_sort_key)
+    p = p.sort_values(["product", "_s"])
+    return p[["product", "size", "boxes", "loose_pcs", "fresh_total_pcs"]].reset_index(drop=True)
 
 
 def stock_matrix(df, value="closing_pcs"):

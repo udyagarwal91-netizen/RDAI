@@ -5,15 +5,15 @@ import re
 import pandas as pd
 
 TEMPLATES = {
-    "opening_stock": ["Date", "Product", "Size", "Stock Type", "Qty Units", "Qty Pieces"],
-    "sales": ["Date", "Product", "Size", "Stock Type", "Qty Units", "Qty Pieces", "Bill No"],
-    "physical_count": ["Product", "Size", "Stock Type", "Qty Units", "Qty Pieces"],
+    "opening_stock": ["Date", "Product", "Size", "Stock Type", "Boxes (Units)", "Loose Pcs"],
+    "sales": ["Date", "Product", "Size", "Stock Type", "Boxes (Units)", "Loose Pcs", "Bill No"],
+    "physical_count": ["Product", "Size", "Stock Type", "Boxes (Units)", "Loose Pcs"],
 }
 
 TEMPLATE_HELP = (
-    "Quantity = Qty Units x 10 + Qty Pieces. Fill either column (or both, e.g. 7 units + 3 pcs). "
-    "Stock Type is FRESH (default if blank), SECOND (addas) or UNFINISHED (panels). "
-    "Dates as DD-MM-YYYY."
+    "FRESH stock (default if Stock Type is blank): 'Boxes (Units)' = full boxes of 10, 'Loose Pcs' = loose "
+    "pieces. 50.5 in Boxes is read as 50 boxes + 5 loose. Example: 50 boxes and 5 loose -> Boxes 50, Loose Pcs 5. "
+    "SECOND (addas) and UNFINISHED (panels): Units x 10 + Loose Pcs, all of that type. Dates as DD-MM-YYYY."
 )
 
 # Header spellings we accept -> internal column name
@@ -24,8 +24,9 @@ SYNONYMS = {
     "size": "size",
     "stock type": "stock_type", "type": "stock_type",
     "qty units": "qty_units", "units": "qty_units", "qty": "qty_units", "quantity": "qty_units",
-    "qty (units)": "qty_units",
-    "qty pieces": "qty_pcs", "pieces": "qty_pcs", "pcs": "qty_pcs", "qty pcs": "qty_pcs",
+    "qty (units)": "qty_units", "boxes (units)": "qty_units", "boxes": "qty_units",
+    "loose pcs": "loose_pcs", "loose": "loose_pcs", "loose pieces": "loose_pcs",
+    "qty pieces": "loose_pcs", "pieces": "loose_pcs", "pcs": "loose_pcs", "qty pcs": "loose_pcs",
     "bill no": "ref", "bill": "ref", "invoice": "ref", "invoice no": "ref", "voucher no": "ref", "ref": "ref",
 }
 

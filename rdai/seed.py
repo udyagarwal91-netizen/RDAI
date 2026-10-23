@@ -10,7 +10,7 @@ import os
 from .db import connect
 from .production import add_line
 from .masters import get_or_create_stitcher
-from .units import to_pcs, units_to_pcs
+from .units import split_pcs, to_pcs, units_to_pcs
 
 SEED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed",
                          "ledger_2026-04-01_to_2026-10-13.csv")
@@ -31,12 +31,12 @@ def load_ledger_csv(conn, path=SEED_FILE, issue_date="2026-04-01", receipt_date=
                              (cno, issue_date, r["kind"], get_or_create_stitcher(conn, stitcher)))
                 created.add(cno)
             line_id = add_line(conn, cno, r["product"], r["size"], units_to_pcs(r["issue_units"]), r["note"])
-            vals = (units_to_pcs(r["receive_units"]), to_pcs(r["addas_pcs"]), to_pcs(r["short_pcs"]),
+            vals = (*split_pcs(units_to_pcs(r["receive_units"])), to_pcs(r["addas_pcs"]), to_pcs(r["short_pcs"]),
                     to_pcs(r["unfinished_pcs"]))
             if r["kind"] == "STITCHING" and any(vals):
                 conn.execute(
-                    "INSERT INTO receipts(line_id, receipt_date, received_pcs, addas_pcs, short_pcs, unfinished_pcs, note) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 'From production book')",
+                    "INSERT INTO receipts(line_id, receipt_date, received_pcs, loose_pcs, addas_pcs, short_pcs, "
+                    "unfinished_pcs, note) VALUES (?, ?, ?, ?, ?, ?, ?, 'From production book')",
                     (line_id, receipt_date, *vals))
     return len(rows)
 

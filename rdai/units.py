@@ -1,4 +1,4 @@
-"""Units <-> pieces. 1 unit = 10 pieces. Issue/receive/sales/ERP figures are in units
+"""Units <-> pieces. 1 unit = 10 pieces = 1 box. Issue/receive/sales/ERP figures are in units
 (one decimal place, e.g. 7.2 units = 72 pcs); addas/short/unfinished are in pieces."""
 from decimal import Decimal, InvalidOperation
 
@@ -46,3 +46,14 @@ def pcs_to_units(pcs):
 def fmt_units(pcs):
     """72 -> '7.2'."""
     return f"{pcs / PCS_PER_UNIT:.1f}"
+
+
+def split_pcs(pcs):
+    """Fresh pieces -> (full-box pieces, loose pieces). 505 -> (500, 5); -25 -> (-20, -5)."""
+    loose = abs(pcs) % PCS_PER_UNIT * (1 if pcs >= 0 else -1)
+    return pcs - loose, loose
+
+
+def fmt_boxes(boxed_pcs, loose_pcs):
+    """(500, 5) -> '50 boxes + 5 loose'."""
+    return f"{boxed_pcs // PCS_PER_UNIT} boxes + {loose_pcs} loose"

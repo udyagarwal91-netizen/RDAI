@@ -29,7 +29,10 @@ How the business works:
 - Cut pieces are issued to stitchers on numbered issue challans. Stitchers return finished pieces.
 - 1 unit = 10 pieces. Issue, receive and ERP sales quantities are in units (one decimal, 7.2 units = 72 pcs). \
 Addas (mistake pieces), short and unfinished are in pieces. All tool results are in pieces unless a field says units.
-- Received good pieces go to FRESH stock. Addas pieces go to SECOND stock. Unfinished panels go to UNFINISHED stock; \
+- Received good pieces are fresh stock, kept in two parts: FRESH = full boxes of 10 and LOOSE = loose pieces. \
+50.5 units received = 50 boxes + 5 loose pieces. Fresh total = FRESH + LOOSE. When reporting fresh stock, \
+give boxes and loose pieces separately (the fresh_summary in get_closing_stock does this). \
+Addas pieces go to SECOND stock. Unfinished panels go to UNFINISHED stock; \
 the stitcher still owes finished pieces for them, and also for short pieces.
 - Closing stock = opening stock + received from stitchers - sales +/- adjustments, as of a date.
 - Challan types: STITCHING (normal), SALE_TO_STITCHER (a lot sold to a stitcher, no stock effect), \
@@ -62,8 +65,9 @@ def _tool(name, description, properties, required=()):
 
 
 _DATE = {"type": "string", "description": "Date as YYYY-MM-DD"}
-_STYPE = {"type": "string", "enum": ["FRESH", "SECOND", "UNFINISHED"],
-          "description": "FRESH = good stock, SECOND = addas pieces, UNFINISHED = unfinished panels"}
+_STYPE = {"type": "string", "enum": ["FRESH", "LOOSE", "SECOND", "UNFINISHED"],
+          "description": "FRESH = good stock in full boxes, LOOSE = loose good pieces, SECOND = addas pieces, "
+                         "UNFINISHED = unfinished panels"}
 _PRODUCT = {"type": "string", "description": "Product name from the product master"}
 _SIZE = {"type": "string", "description": "Size, e.g. 85, 90, M, XL, 2XL"}
 
@@ -98,7 +102,9 @@ TOOLS = [
     _tool("propose_receipt", "Propose recording goods received back against a challan line. Requires user "
           "confirmation.",
           {"challan_no": {"type": "string"}, "product": _PRODUCT, "size": _SIZE, "receipt_date": _DATE,
-           "received_units": {"type": "number", "description": "Good pieces received, in UNITS"},
+           "received_units": {"type": "number", "description": "Fresh received in UNITS: whole units are boxes, "
+                                                                "the decimal is loose (50.5 = 50 boxes + 5 loose)"},
+           "loose_pcs": {"type": "integer", "description": "Additional loose fresh pieces"},
            "addas_pcs": {"type": "integer"},
            "short_pcs": {"type": "integer", "description": "Negative = extra pieces received"},
            "unfinished_pcs": {"type": "integer"}},
@@ -110,8 +116,9 @@ TOOLS = [
           ["challan_no", "product", "size", "date", "pieces", "against"]),
     _tool("propose_sale", "Propose a single manual sale entry (bulk sales are uploaded on the Sales page). "
           "Requires user confirmation.",
-          {"date": _DATE, "product": _PRODUCT, "size": _SIZE, "qty_units": {"type": "number"},
-           "stock_type": _STYPE, "bill_no": {"type": "string"}},
+          {"date": _DATE, "product": _PRODUCT, "size": _SIZE,
+           "qty_units": {"type": "number", "description": "Units as in the ERP; for fresh, 2.5 = 2 boxes + 5 loose"},
+           "stock_type": {"type": "string", "enum": ["FRESH", "SECOND", "UNFINISHED"]}, "bill_no": {"type": "string"}},
           ["date", "product", "size", "qty_units"]),
     _tool("propose_adjustment", "Propose a stock correction in pieces (+ adds, - removes) with a reason. "
           "Requires user confirmation.",
@@ -164,6 +171,9 @@ def run_read_tool(conn, name, args):
         res = _records(df.drop(columns=["closing_units"], errors="ignore"))
         if not df.empty:
             res["totals_by_stock_type_pcs"] = df.groupby("stock_type")["closing_pcs"].sum().to_dict()
+            fs = stock.fresh_summary(df)
+            if not fs.empty:
+                res["fresh_summary"] = _records(fs)["rows"]
         return res
     if name == "explain_stock":
         if err := _check_product(conn, args["product"]):
@@ -231,7 +241,7 @@ def validate_proposal(conn, name, a):
         if line["kind"] != "STITCHING":
             raise ValueError(f"Challan {a['challan_no']} is {line['kind']}; receipts only apply to stitching challans")
         return (f"Receipt on challan {a['challan_no']} {a['product']} {a['size']} dated {a['receipt_date']}: "
-                f"received {a.get('received_units', 0)} units, addas {a.get('addas_pcs', 0)} pcs, "
+                f"fresh {a.get('received_units', 0)} units + {a.get('loose_pcs', 0)} extra loose pcs, addas {a.get('addas_pcs', 0)} pcs, "
                 f"short {a.get('short_pcs', 0)} pcs, unfinished {a.get('unfinished_pcs', 0)} pcs")
     if name == "propose_settle_dues":
         need_product(a["product"])
@@ -262,16 +272,16 @@ def execute_proposal(conn, p):
     elif name == "propose_receipt":
         lid, _ = _line_id(conn, a["challan_no"], a["product"], a["size"])
         prod.add_receipt(conn, lid, a["receipt_date"], a.get("received_units", 0), a.get("addas_pcs", 0),
-                         a.get("short_pcs", 0), a.get("unfinished_pcs", 0), note="Entered via chat")
+                         a.get("short_pcs", 0), a.get("unfinished_pcs", 0), note="Entered via chat",
+                         loose_pcs=a.get("loose_pcs", 0))
     elif name == "propose_settle_dues":
         lid, _ = _line_id(conn, a["challan_no"], a["product"], a["size"])
         prod.settle_dues(conn, lid, a["date"], a["pieces"], a["against"])
     elif name == "propose_sale":
-        from .units import units_to_pcs
         with conn:
-            stock.add_entry(conn, "SALE", a["date"], a["product"], a["size"], units_to_pcs(a["qty_units"]),
-                            a.get("stock_type", "FRESH"), ref=a.get("bill_no"), note="Entered via chat",
-                            create_product=False)
+            for stype, qty in stock.split_qty({"qty_units": a["qty_units"]}, a.get("stock_type", "FRESH")):
+                stock.add_entry(conn, "SALE", a["date"], a["product"], a["size"], qty, stype,
+                                ref=a.get("bill_no"), note="Entered via chat", create_product=False)
     elif name == "propose_adjustment":
         stock.add_adjustment(conn, a["date"], a["product"], a["size"], int(a["qty_pcs"]), a["stock_type"], a["reason"])
     else:

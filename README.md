@@ -10,13 +10,18 @@ kept separately for three stock types:
 
 | Stock type   | Comes from                              |
 |--------------|-----------------------------------------|
-| FRESH        | Received good pieces                    |
+| FRESH        | Received good pieces in full boxes of 10 |
+| LOOSE        | Received good pieces not in a full box  |
 | SECOND       | Addas (mistake) pieces received         |
 | UNFINISHED   | Unfinished panels received (info stock) |
 
 It also tracks every issue challan: what each stitcher still owes, and which book lines don't balance.
 
-## Units
+## Units, boxes and loose pieces
+
+* 50.5 units of fresh received = **50 boxes + 5 loose pieces**. Fresh total = boxes + loose.
+* Upload templates have **Boxes (Units)** and **Loose Pcs** columns (opening stock, sales, physical count).
+* Packing loose pieces into boxes, or opening boxes: Adjustments page -> Repack.
 
 * Issue, receive, ERP sales: **units** (1 unit = 10 pcs, one decimal: 7.2 = 72 pcs)
 * Addas, short, unfinished: **pieces**

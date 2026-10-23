@@ -12,7 +12,7 @@ Stock app for RDK (garment manufacturer): production challans (issue to stitcher
 
 ## Architecture
 
-- `rdai/db.py` - SQLite schema. `v_movements` view is the single source of stock: it unions `stock_entries` (OPENING / SALE / ADJUSTMENT) with `receipts` (received -> FRESH, addas -> SECOND, unfinished -> UNFINISHED). Closing stock = SUM(qty) where date <= as_of.
+- `rdai/db.py` - SQLite schema. `v_movements` view is the single source of stock: it unions `stock_entries` (OPENING / SALE / ADJUSTMENT) with `receipts` (received -> FRESH full boxes, loose -> LOOSE, addas -> SECOND, unfinished -> UNFINISHED). Closing stock = SUM(qty) where date <= as_of. Schema version in `PRAGMA user_version`; `_migrate` upgrades old databases on connect (v2 split fresh into boxes + loose). The view is rebuilt on every connect.
 - `rdai/production.py` - challans, lines, receipts. Line balance: issued = received + addas + short + unfinished + unaccounted. Settling dues = receipt with received +X and short/unfinished -X. Challan kinds: STITCHING (affects stock), SALE_TO_STITCHER and INHOUSE (no stock effect).
 - `rdai/stock.py` - entries, file imports (batched, hash-deduplicated, undoable), closing stock, per-SKU ledger.
 - `rdai/physical.py` - physical counts, reconcile vs system as of count date, post adjustments.
@@ -24,6 +24,7 @@ Stock app for RDK (garment manufacturer): production challans (issue to stitcher
 
 ## Conventions
 
+- Fresh stock = FRESH (full boxes, always a multiple of 10 pcs) + LOOSE (loose pieces). A units figure splits as whole units -> boxes, decimal -> loose (50.5 = 500 FRESH + 5 LOOSE) via `units.split_pcs` / `stock.split_qty`. Moving between them is `stock.repack`.
 - Store integer pieces only. Convert at the edges with `rdai.units` (units x 10). Reject units with more than 1 decimal.
 - Every product name from outside (book, ERP, staff) goes through `find_product` / aliases; unknown names must be mapped by a human, never auto-created on sales import.
 - The agent never writes directly: any new data-changing tool must be a `propose_*` tool validated in `validate_proposal` and executed in `execute_proposal`.

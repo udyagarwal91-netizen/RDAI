@@ -11,7 +11,7 @@ from rdai.io_excel import (TEMPLATE_HELP, apply_mapping, guess_mapping, read_tab
                            to_excel_bytes)
 from rdai.masters import (add_alias, find_product, get_or_create_product, list_products, list_stitchers,
                           merge_products, rename_product, size_sort_key)
-from rdai.units import units_to_pcs
+from rdai.units import split_pcs, units_to_pcs
 
 st.set_page_config(page_title="RDAI Stock", page_icon="📦", layout="wide")
 
@@ -62,7 +62,7 @@ def upload_flow(kind, key, needs_date=True):
         return None
     st.write(f"{len(raw)} rows read. Check the column mapping:")
     guessed = guess_mapping(raw.columns)
-    options = ["(ignore)", "date", "product", "size", "stock_type", "qty_units", "qty_pcs", "ref"]
+    options = ["(ignore)", "date", "product", "size", "stock_type", "qty_units", "loose_pcs", "ref"]
     cols = st.columns(min(len(raw.columns), 6) or 1)
     mapping = {}
     for i, c in enumerate(raw.columns):
@@ -74,8 +74,8 @@ def upload_flow(kind, key, needs_date=True):
     if missing := required - set(df.columns):
         st.warning("Map these columns: " + ", ".join(sorted(missing)))
         return None
-    if not {"qty_units", "qty_pcs"} & set(df.columns):
-        st.warning("Map a quantity column (qty_units for ERP units, or qty_pcs).")
+    if not {"qty_units", "loose_pcs"} & set(df.columns):
+        st.warning("Map a quantity column (qty_units = boxes/units, loose_pcs = loose pieces).")
         return None
     default_date = None
     if "date" not in df.columns:
@@ -109,7 +109,10 @@ def upload_flow(kind, key, needs_date=True):
     prev = pd.DataFrame(rows)
     prev["product"] = prev["product"].map(lambda n: conn.execute(
         "SELECT name FROM products WHERE id = ?", (find_product(conn, n),)).fetchone()["name"])
-    st.success(f"{len(rows)} rows ready - total {prev['qty_pcs'].sum():,} pcs ({prev['qty_pcs'].sum() / 10:,.1f} units)")
+    by_type = prev.groupby("stock_type")["qty_pcs"].sum()
+    parts = [f"{by_type.get('FRESH', 0) // 10:,} boxes", f"{by_type.get('LOOSE', 0):,} loose pcs"] + \
+        [f"{t.lower()} {q:,} pcs" for t, q in by_type.items() if t not in ("FRESH", "LOOSE")]
+    st.success(f"{len(rows)} rows ready - " + ", ".join(parts) + f" (total {prev['qty_pcs'].sum():,} pcs)")
     st.dataframe(prev, width="stretch", height=250)
     return rows, f.name, stock.file_hash(data)
 
@@ -198,39 +201,65 @@ elif page == "Closing Stock":
     st.title("Closing Stock")
     c1, c2, c3 = st.columns([1, 1, 2])
     as_of = c1.date_input("As of date", today)
-    stype = c2.selectbox("Stock type", STOCK_TYPES, format_func=lambda s: {
-        "FRESH": "Fresh", "SECOND": "Seconds (Addas)", "UNFINISHED": "Unfinished panels"}[s])
+    stype = c2.selectbox("Stock type", ["FRESH_ALL", "SECOND", "UNFINISHED"], format_func=lambda s: {
+        "FRESH_ALL": "Fresh (boxes + loose)", "SECOND": "Seconds (Addas)", "UNFINISHED": "Unfinished panels"}[s])
     prod_filter = c3.multiselect("Products (blank = all)", product_names())
-    df = stock.closing_stock(conn, as_of.isoformat(), stype)
+    df = stock.closing_stock(conn, as_of.isoformat())
+    if not df.empty:
+        df = df[df["stock_type"].isin(["FRESH", "LOOSE"] if stype == "FRESH_ALL" else [stype])]
     if prod_filter and not df.empty:
         df = df[df["product"].isin(prod_filter)]
+
+    def show_matrix(frame, title):
+        st.subheader(title)
+        letter = frame["size"].map(lambda z: not str(z).isdigit())
+        for caption, part in (("Number sizes", frame[~letter]), ("Letter sizes", frame[letter])):
+            if not part.empty:
+                st.caption(caption)
+                st.dataframe(stock.stock_matrix(part).astype("Int64").astype("string").fillna(""), width="stretch")
+
     if df.empty:
         st.info("No stock movements yet for this selection.")
     else:
         neg = df[df["closing_pcs"] < 0]
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total pieces", f"{df['closing_pcs'].sum():,}")
-        m2.metric("Total units", f"{df['closing_pcs'].sum() / 10:,.1f}")
-        m3.metric("Negative balances", len(neg))
+        if stype == "FRESH_ALL":
+            summ = stock.fresh_summary(df)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Boxes", f"{summ['boxes'].sum():,}")
+            m2.metric("Loose pieces", f"{summ['loose_pcs'].sum():,}")
+            m3.metric("Fresh total pieces", f"{summ['fresh_total_pcs'].sum():,}")
+            m4.metric("Negative balances", len(neg))
+        else:
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total pieces", f"{df['closing_pcs'].sum():,}")
+            m2.metric("Total units", f"{df['closing_pcs'].sum() / 10:,.1f}")
+            m3.metric("Negative balances", len(neg))
         if len(neg):
             st.warning("Negative stock means sales were booked without matching opening stock or receipts, "
-                       "or a product name in sales is mapped to the wrong product.")
-        st.subheader("Product x Size (pieces)")
-        letter = df["size"].map(lambda z: not str(z).isdigit())
-        for title, part in (("Number sizes", df[~letter]), ("Letter sizes", df[letter])):
-            if not part.empty:
-                st.caption(title)
-                st.dataframe(stock.stock_matrix(part).astype("Int64").astype("string").fillna(""),
-                             width="stretch")
+                       "a product name in sales is mapped to the wrong product, or loose pieces were sold from "
+                       "boxes without recording 'Open boxes' on the Adjustments page.")
+        if stype == "FRESH_ALL":
+            boxes = df[df["stock_type"] == "FRESH"].assign(closing_pcs=lambda d: d["closing_pcs"] // 10)
+            show_matrix(boxes, "Boxes (1 box = 10 pcs)")
+            loose = df[(df["stock_type"] == "LOOSE") & (df["closing_pcs"] != 0)]
+            if not loose.empty:
+                show_matrix(loose, "Loose pieces")
+            with st.expander("Detail per product and size: boxes, loose, total"):
+                st.dataframe(summ, width="stretch", hide_index=True)
+            sheets = {"fresh": summ, "movements": df}
+        else:
+            show_matrix(df, "Product x Size (pieces)")
+            sheets = {"matrix": stock.stock_matrix(df), "detail": df}
         with st.expander("Detail: opening + received - sold +/- adjusted = closing"):
             st.dataframe(df, width="stretch", hide_index=True)
-        download("Download Excel", {"matrix": stock.stock_matrix(df), "detail": df},
-                 f"closing_stock_{stype.lower()}_{as_of}.xlsx")
+        download("Download Excel", sheets, f"closing_stock_{stype.lower()}_{as_of}.xlsx")
         st.subheader("Explain a number")
-        e1, e2 = st.columns(2)
+        e1, e2, e3 = st.columns(3)
         p = e1.selectbox("Product", sorted(df["product"].unique()))
         sz = e2.selectbox("Size", sorted(df[df["product"] == p]["size"].unique(), key=size_sort_key))
-        st.dataframe(stock.sku_ledger(conn, p, sz, stype), width="stretch", hide_index=True)
+        types = ["FRESH", "LOOSE"] if stype == "FRESH_ALL" else [stype]
+        et = e3.selectbox("Part", types, format_func=lambda t: {"FRESH": "Boxes", "LOOSE": "Loose"}.get(t, t))
+        st.dataframe(stock.sku_ledger(conn, p, sz, et), width="stretch", hide_index=True)
     st.caption("Production-book receipts loaded from photos are dated 13-10-2026 (the book has no per-line "
                "dates), so stock 'as of' a date before that will not include them.")
 
@@ -316,23 +345,30 @@ elif page == "Challans (Inward/Outward)":
         return opts[st.selectbox("Line", list(opts), key=f"{key}_line")]
 
     with tab_recv:
-        st.caption("Received in UNITS. Addas, short and unfinished in PIECES - same as the book. "
+        st.caption("Received fresh in UNITS: whole units are boxes, the decimal is loose (50.5 = 50 boxes + "
+                   "5 loose). Extra loose pcs, addas, short and unfinished in PIECES. "
                    "Use a negative short for extra pieces received.")
         ln = pick_line("recv")
         if ln is not None:
-            with st.form("recv"):
-                a, b, c, d, e = st.columns(5)
+            with st.container(border=True):
+                a, b, b2, c, d, e = st.columns(6)
                 rdate = a.date_input("Receipt date", today)
-                ru = b.number_input("Received (units)", min_value=0.0, step=0.1, format="%.1f")
+                ru = b.number_input("Fresh received (units)", min_value=0.0, step=0.1, format="%.1f")
+                lp = b2.number_input("Extra loose (pcs)", min_value=0, step=1)
                 ad = c.number_input("Addas (pcs)", min_value=0, step=1)
                 sh = d.number_input("Short (pcs)", step=1)
                 uf = e.number_input("Unfinished (pcs)", min_value=0, step=1)
                 note = st.text_input("Note")
-                after = ln.unaccounted_pcs - units_to_pcs(round(ru, 1)) - ad - sh - uf
+                boxed, loose = split_pcs(units_to_pcs(round(ru, 1)))
+                loose += lp
+                fresh = boxed + loose
+                after = ln.unaccounted_pcs - fresh - ad - sh - uf
+                st.write(f"Fresh: **{boxed // 10} boxes + {loose} loose** ({fresh} pcs).")
                 st.write(f"After this receipt, unaccounted on this line will be **{after} pcs**.")
-                if st.form_submit_button("Save receipt"):
+                if st.button("Save receipt", type="primary"):
                     try:
-                        prod.add_receipt(conn, ln.line_id, rdate.isoformat(), round(ru, 1), ad, sh, uf, note)
+                        prod.add_receipt(conn, ln.line_id, rdate.isoformat(), round(ru, 1), ad, sh, uf, note,
+                                         loose_pcs=lp)
                         st.success("Saved.")
                     except ValueError as e:
                         st.error(str(e))
@@ -513,7 +549,24 @@ elif page == "Physical Count & Tally":
                     st.rerun()
 
 elif page == "Adjustments":
-    st.title("Manual Adjustment")
+    st.title("Adjustments")
+    st.subheader("Repack fresh stock")
+    st.caption("Pack loose pieces into full boxes, or open boxes into loose pieces. Total fresh stock does not change.")
+    with st.form("repack", clear_on_submit=True):
+        a, b, c, d, e = st.columns(5)
+        rpdate = a.date_input("Date", today, key="rp_date")
+        rpp = b.selectbox("Product", product_names(), key="rp_p")
+        rps = c.text_input("Size", key="rp_s")
+        rpd = d.selectbox("Action", ["PACK", "OPEN"], format_func=lambda x: {
+            "PACK": "Pack loose into boxes", "OPEN": "Open boxes into loose"}[x])
+        rpb = e.number_input("Boxes", min_value=1, step=1)
+        if st.form_submit_button("Save repack"):
+            try:
+                stock.repack(conn, rpdate.isoformat(), rpp, rps, rpb, rpd)
+                st.success("Saved.")
+            except ValueError as ex:
+                st.error(str(ex))
+    st.subheader("Manual adjustment")
     st.caption("For corrections not covered elsewhere (damage, sample given, returns). Every adjustment needs a reason.")
     with st.form("adj", clear_on_submit=True):
         a, b, c = st.columns(3)
