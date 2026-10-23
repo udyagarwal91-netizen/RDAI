@@ -1,11 +1,13 @@
 """RDAI stock app - staff screen.  Run:  streamlit run app.py"""
 import datetime as dt
 import os
+import threading
+import time
 
 import pandas as pd
 import streamlit as st
 
-from rdai import agent, physical, production as prod, stock
+from rdai import agent, physical, production as prod, stock, updater
 from rdai.db import CHALLAN_KINDS, STOCK_TYPES, connect, get_setting, set_setting
 from rdai.io_excel import (TEMPLATE_HELP, apply_mapping, guess_mapping, read_table, template_bytes,
                            to_excel_bytes)
@@ -28,6 +30,20 @@ PAGES = ["Ask RDAI", "Closing Stock", "Challans (Inward/Outward)", "Pending with
          "Sales", "Opening Stock", "Physical Count & Tally", "Adjustments", "Masters", "Settings"]
 page = st.sidebar.radio("Menu", PAGES)
 st.sidebar.caption("All stock is calculated in **pieces**. 1 unit = 10 pcs.")
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def update_info():
+    """Latest release info, checked at most once an hour. None when offline."""
+    try:
+        return updater.check_for_update()
+    except Exception:
+        return None
+
+
+if updater.can_self_update() and (u := update_info()) and u["available"]:
+    st.sidebar.success(f"Update available (build {u['latest']}). Go to **Settings** to install it.")
+st.sidebar.caption(f"RDAI build {updater.current_build() or 'dev'}")
 
 
 def product_names():
@@ -661,6 +677,34 @@ elif page == "Settings":
     if m != cur:
         set_setting(conn, "model", m)
         st.success("Saved.")
+    st.subheader("Updates")
+    st.write(f"This is RDAI build **{updater.current_build() or 'dev (running from source)'}**.")
+    if st.button("Check for updates"):
+        update_info.clear()
+    info = update_info()
+    if info is None:
+        st.caption("Could not reach GitHub to check for updates (no internet?). Everything else works offline.")
+    elif not info["available"]:
+        st.success(f"You have the latest version (build {info['latest']}).")
+    elif not updater.can_self_update():
+        st.info(f"Build {info['latest']} is available. Updates install only in the Windows RDAI.exe.")
+    else:
+        st.warning(f"Build **{info['latest']}** is available (you have build {info['current']}).")
+        st.caption("Update now: downloads the new version (~100 MB), backs up your data file, closes RDAI, "
+                   "installs, and opens RDAI again in a new browser tab. Your data folder is not touched.")
+        if st.button("Update now", type="primary"):
+            bar = st.progress(0.0, text="Downloading update...")
+            try:
+                db_file = conn.execute("PRAGMA database_list").fetchone()["file"]
+                backup = updater.apply_update(info, db_file, progress=lambda f: bar.progress(min(f, 1.0)))
+            except Exception as e:
+                st.error(f"Update failed, nothing was changed: {e}")
+            else:
+                st.success(f"Data backed up to {backup}. RDAI is closing and will reopen in a few seconds "
+                           "with the new version. You can close this browser tab.")
+                threading.Thread(target=lambda: (time.sleep(3), os._exit(0)), daemon=True).start()
+                st.stop()
+
     st.subheader("Data file")
     st.code(os.path.abspath(conn.execute("PRAGMA database_list").fetchone()["file"]))
     st.caption("Back up this one file daily (pen drive / Google Drive). It holds all your data.")

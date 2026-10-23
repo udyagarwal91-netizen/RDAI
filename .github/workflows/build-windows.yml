@@ -27,6 +27,10 @@ jobs:
       - name: Test
         run: python -m pytest -q
 
+      - name: Stamp build number
+        shell: pwsh
+        run: Set-Content -Path rdai/_version.py -Value "BUILD = `"${{ github.run_number }}`""
+
       - name: Build RDAI.exe
         run: pyinstaller --noconfirm rdai.spec
 
@@ -45,6 +49,30 @@ jobs:
           if (-not (Test-Path dist\RDAI\data\rdai.db)) { throw "database was not created" }
           Remove-Item -Recurse -Force dist\RDAI\data
 
+      - name: Rehearse an update (old install -> this build, data kept)
+        shell: pwsh
+        run: |
+          $old = "$env:RUNNER_TEMP\old\RDAI"
+          New-Item -ItemType Directory -Force "$old\data" | Out-Null
+          Copy-Item -Recurse dist\RDAI\* $old
+          Set-Content "$old\data\rdai.db.marker" "keep me"
+          Set-Content "$old\stale-file.txt" "old version file"
+          $dummy = Start-Process -FilePath ping -ArgumentList "-n","6","127.0.0.1" -PassThru -WindowStyle Hidden
+          $new = (Resolve-Path dist\RDAI).Path
+          python -c "from rdai.updater import updater_script; open('upd.bat','w').write(updater_script($($dummy.Id), r'$new', r'$old'))"
+          cmd /c upd.bat
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 2
+            try { if ((Invoke-WebRequest http://localhost:8501/_stcore/health -UseBasicParsing).Content -eq "ok") { $ok = $true; break } } catch {}
+          }
+          Get-Process RDAI -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not $ok) { throw "RDAI did not restart after the update" }
+          if ((Get-Content "$old\data\rdai.db.marker") -ne "keep me") { throw "data folder was changed" }
+          if (Test-Path "$old\stale-file.txt") { throw "old files were not replaced" }
+          if (-not (Test-Path "$old\data\rdai.db")) { throw "restarted app did not open its database" }
+          Write-Host "Update rehearsal passed"
+
       - name: Zip
         shell: pwsh
         run: |
@@ -56,8 +84,13 @@ jobs:
           name: RDAI-windows
           path: RDAI-windows.zip
 
-      - name: Publish release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Every successful build becomes the latest release; RDAI's "Update now" button installs it.
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: build-${{ github.run_number }}
+          name: RDAI build ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: ${{ github.event.head_commit.message }}
           files: RDAI-windows.zip

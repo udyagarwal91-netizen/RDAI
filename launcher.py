@@ -53,7 +53,7 @@ def main():
     sys.path.insert(0, base_dir())
 
     # Fail here, visibly, if the bundle is incomplete (app.py imports these).
-    import rdai.agent, rdai.io_excel, rdai.physical  # noqa: F401,E401
+    import rdai.agent, rdai.io_excel, rdai.physical, rdai.updater  # noqa: F401,E401
     from rdai.db import connect
     from rdai.seed import load_ledger_csv
     if not os.path.exists(db_path):

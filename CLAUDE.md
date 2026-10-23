@@ -20,6 +20,7 @@ Stock app for RDK (garment manufacturer): production challans (issue to stitcher
 - `rdai/io_excel.py` - templates and tolerant column mapping for uploads (ERP exports).
 - `rdai/agent.py` - chat assistant: tool schemas, read tools over the engine, `propose_*` write tools that only create proposals (saved only after the user clicks Confirm -> `execute_proposal`), manual tool loop `run_turn` (append-only history). API key + model stored in `app_settings`.
 - `app.py` - Streamlit UI only; no business logic there.
+- `rdai/updater.py` - "Update now" (Settings page): checks GitHub `releases/latest` (tag `build-<N>`) against `rdai/_version.py` (stamped by CI), downloads the zip, backs up the DB, and runs a batch script that waits for RDAI.exe to exit, robocopy-mirrors the new files (data folder excluded) and restarts. CI publishes every successful build as a release and rehearses an update on Windows.
 - `launcher.py` + `rdai.spec` - RDAI.exe entry: picks data dir next to exe, seeds DB on first run, starts Streamlit, opens browser. New `rdai` modules must be added to `hiddenimports` in `rdai.spec` (app.py's imports are invisible to PyInstaller).
 
 ## Conventions
