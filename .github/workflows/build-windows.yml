@@ -61,6 +61,7 @@ jobs:
           $new = (Resolve-Path dist\RDAI).Path
           python -c "from rdai.updater import updater_script; open('upd.bat','w').write(updater_script($($dummy.Id), r'$new', r'$old'))"
           cmd /c upd.bat
+          if ($LASTEXITCODE -ne 0) { throw "update script failed with code $LASTEXITCODE" }
           $ok = $false
           for ($i = 0; $i -lt 60; $i++) {
             Start-Sleep -Seconds 2

@@ -74,7 +74,7 @@ echo Updating RDAI - please wait, do not close this window...
 :wait
 tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
 if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
+  ping -n 2 127.0.0.1 >nul
   goto wait
 )
 robocopy "{new_dir}" "{target_dir}" /MIR /XD "{os.path.join(target_dir, 'data')}" /R:5 /W:2 /NFL /NDL /NJH /NJS /NP
@@ -86,7 +86,7 @@ if errorlevel 8 (
   exit /b 1
 )
 start "" "{os.path.join(target_dir, 'RDAI.exe')}"
-exit
+exit /b 0
 """
 
 
