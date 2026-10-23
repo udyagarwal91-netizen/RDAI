@@ -65,6 +65,12 @@ def main():
         load_ledger_csv(conn)
         conn.close()
         os.replace(tmp, db_path)  # only a fully seeded database is ever used
+    else:
+        conn = connect(db_path)  # also upgrades an older database
+        added = load_ledger_csv(conn)  # book pages added in a newer version of RDAI
+        conn.close()
+        if added:
+            print(f"Added {added} new challan lines from the production book.")
 
     port = free_port()
     url = f"http://localhost:{port}"

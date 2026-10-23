@@ -97,8 +97,9 @@ def test_physical_count_reconcile_and_adjust(conn):
 
 
 def test_seed_ledger_loads_and_flags_known_problems(conn):
-    assert load_ledger_csv(conn) == 447
-    assert len(prod.challan_summary(conn)) == 91
+    assert load_ledger_csv(conn) == 545
+    assert len(prod.challan_summary(conn)) == 113
+    assert load_ledger_csv(conn) == 0  # second run adds nothing
     ex = prod.exceptions(conn).set_index(["challan_no", "size"])
     assert ex.loc[("55", "85"), "unaccounted_pcs"] == 1000
     assert ex.loc[("35", "80"), "unaccounted_pcs"] == 30
@@ -172,3 +173,23 @@ def test_old_database_upgrades_without_changing_totals(tmp_path):
     assert rec["physical_pcs"].sum() == 527 and (rec["variance_pcs"] == 0).all()
     conn.close()
     assert connect(str(tmp_path / "old.db")).execute("PRAGMA user_version").fetchone()[0] == 2  # idempotent
+
+
+def test_seed_adds_only_missing_challans(conn):
+    """An installation that already has challans 1-91 gets 92-113 added; its own edits stay."""
+    import csv, io, tempfile
+    from rdai.seed import SEED_FILE
+    rows = list(csv.DictReader(open(SEED_FILE, newline="", encoding="utf-8")))
+    old = [r for r in rows if int(r["challan_no"]) <= 91]
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(old)
+    assert load_ledger_csv(conn, path=f.name) == 447
+    line = prod.line_balances(conn, challan_no="91").iloc[0]
+    prod.add_receipt(conn, int(line.line_id), "2026-10-20", received_units=10)  # staff entry in the app
+    assert load_ledger_csv(conn) == 98
+    assert prod.line_balances(conn, challan_no="91").iloc[0].received_pcs == 100  # untouched
+    b = prod.line_balances(conn, challan_no="97").set_index("size")
+    assert (b.loc["85", "issued_pcs"], b.loc["85", "received_pcs"], b.loc["85", "addas_pcs"]) == (1800, 1767, 33)
+    assert prod.line_balances(conn, challan_no="113")["issued_pcs"].sum() == 6070

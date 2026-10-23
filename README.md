@@ -45,8 +45,9 @@ Needs internet and a Claude API key (Settings page).
 It opens in the browser at http://localhost:8501. To let other office computers use it, run
 `streamlit run app.py --server.address 0.0.0.0` and open `http://<this-computer-ip>:8501`.
 
-On first start the database is created from `data/seed/ledger_2026-04-01_to_2026-10-13.csv`
-(challans 1-91 typed from the production book photos).
+On first start the database is created from `data/seed/production_book.csv` (challans typed from the
+production book photos). New book pages added to that file in a later version are added on start;
+challans already in the database are never changed.
 
 ## Routine for staff
 

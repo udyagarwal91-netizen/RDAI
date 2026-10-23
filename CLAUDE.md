@@ -5,7 +5,7 @@ Stock app for RDK (garment manufacturer): production challans (issue to stitcher
 ## Commands
 
 - Setup: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
-- Seed DB from the transcribed book: `.venv/bin/python -m rdai.seed` (creates `data/rdai.db`; set `RDAI_DB` to use another path)
+- Seed DB from the transcribed book `data/seed/production_book.csv`: `.venv/bin/python -m rdai.seed` (creates `data/rdai.db`; set `RDAI_DB` to use another path). Adds only challans not already in the DB; the exe runs it on every start, so new book pages are added by appending rows to the CSV.
 - Run UI: `.venv/bin/streamlit run app.py`
 - Build exe locally: `.venv/bin/pip install pyinstaller && .venv/bin/pyinstaller rdai.spec` (Windows exe is built by `.github/workflows/build-windows.yml`; push a `v*` tag to publish a release zip)
 - Tests: `.venv/bin/python -m pytest -q`; single test: `.venv/bin/python -m pytest tests/test_engine.py::test_units -q`
