@@ -61,3 +61,23 @@ def _texts(node) -> list[str]:
         for child in node:
             out += _texts(child)
     return out
+
+
+def to_mp3(audio: bytes, suffix: str = ".webm") -> bytes:
+    """Browsers record in different formats (webm, mp4, ogg). Convert to MP3 with the bundled FFmpeg so Gemini
+    always gets a format it reads."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import imageio_ffmpeg
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src, out = Path(tmp) / f"in{suffix}", Path(tmp) / "out.mp3"
+        src.write_bytes(audio)
+        done = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(src),
+                               "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", str(out)],
+                              capture_output=True, timeout=120)
+        if done.returncode != 0 or not out.exists():
+            raise VoiceError("I couldn't open that recording. Try again, or type your message.")
+        return out.read_bytes()

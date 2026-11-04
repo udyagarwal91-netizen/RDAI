@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Goals{% endblock %}
+{% block body %}
+<h1>Goals</h1>
+<p class="muted">The numbers every agent works towards. Agents only read these — only you can change them.
+  Day {{ day }} of 90{% if doc and doc.baseline_period %} · starting values from {{ doc.baseline_period }}{% endif %}.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+{% if doc %}
+<section class="card">
+  <h2>🎯 North star</h2>
+  <p>{{ doc.north_star }}</p>
+</section>
+
+<section class="card">
+  <h2>Progress</h2>
+  <p class="muted">🟢 on track · 🟡 within 10% · 🔴 behind · ⚪ not measured yet (the Finance and SMO agents fill these in).</p>
+  <div class="scroll"><table class="stats">
+    <tr><th>Goal</th><th>Now</th><th>Should be today</th><th>Day 90</th><th></th></tr>
+    {% for p in progress %}
+    <tr>
+      <td>{{ p.label }}{% if p.measured_at %}<div class="muted">measured {{ p.measured_at }}</div>{% endif %}</td>
+      <td>{{ "—" if p.current is none else ((p.unit if p.unit == "₹" else "") ~ p.current ~ (p.unit if p.unit != "₹" else "")) }}</td>
+      <td>{{ "—" if p.target_now is none else ((p.unit if p.unit == "₹" else "") ~ p.target_now ~ (p.unit if p.unit != "₹" else "")) }}</td>
+      <td>{{ "—" if p.final is none else ((p.unit if p.unit == "₹" else "") ~ p.final ~ (p.unit if p.unit != "₹" else "")) }}</td>
+      <td>{{ {"green": "🟢", "amber": "🟡", "red": "🔴"}.get(p.status, "⚪") }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</section>
+
+<form method="post" action="{{ url_for('goals_page') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <section class="card">
+    <h2>Change goals</h2>
+    <p class="muted">Leave a box empty if you don't want a target for that milestone.</p>
+    <div class="two">
+      <label>Start date (day 0) <input type="text" name="start_date" value="{{ doc.start_date }}"></label>
+      <label>North star <input type="text" name="north_star" value="{{ doc.north_star }}"></label>
+    </div>
+    <div class="scroll"><table class="stats">
+      <tr><th>Goal</th><th>Now</th>{% for m in milestones %}<th>Day {{ m }}</th>{% endfor %}</tr>
+      {% for g in doc.goals %}
+      <tr>
+        <td>{{ g.label }} <span class="muted">({{ g.unit or "count" }}, {{ "higher" if g.better == "higher" else "lower" }} is better)</span></td>
+        <td><input type="text" inputmode="decimal" name="{{ g.key }}_baseline" value="{{ '' if g.baseline is none else g.baseline }}" style="width:80px"></td>
+        {% for m in milestones %}
+        <td><input type="text" inputmode="decimal" name="{{ g.key }}_{{ m }}" value="{{ '' if g.targets.get(m) is none else g.targets.get(m) }}" style="width:80px"></td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h2>🛡 Safety limits (guardrails)</h2>
+    <p class="muted">Hard limits no agent may cross, even to reach a goal. Any spending still needs your ✅.</p>
+    <div class="two">
+      {% for key, (label, unit, _) in guard_labels.items() %}
+      <label>{{ label }} ({{ unit }}) <input type="text" inputmode="decimal" name="guard_{{ key }}" value="{{ doc.guardrails[key] }}" required></label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>💼 Your business numbers</h2>
+    <p class="muted">Used for profit, break-even ROAS and "true ROAS after COD returns". Rough numbers are fine; leave empty if unknown.</p>
+    <div class="two">
+      {% for key, (label, unit) in biz_labels.items() %}
+      <label>{{ label }} ({{ unit }}) <input type="text" inputmode="decimal" name="biz_{{ key }}" value="{{ '' if doc.business[key] is none else doc.business[key] }}"></label>
+      {% endfor %}
+    </div>
+    <div class="actions"><button type="submit">Save goals</button></div>
+  </section>
+</form>
+{% endif %}
+{% endblock %}

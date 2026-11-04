@@ -69,9 +69,16 @@ def main() -> None:
     # On a laptop, only this computer can open the page (127.0.0.1).
     # Hosts like Railway/Render set PORT, and then the page must be reachable from outside.
     on_host = "PORT" in os.environ
-    host = os.environ.get("HOST", "0.0.0.0" if on_host else "127.0.0.1")
+    # "Use on my phone at home" (Home page) sets LAN_ACCESS=1: phones on the same Wi-Fi can then open it.
+    lan = os.environ.get("LAN_ACCESS") == "1"
+    host = os.environ.get("HOST", "0.0.0.0" if (on_host or lan) else "127.0.0.1")
     url = f"http://localhost:{port}"
     log.info("Control Center: %s", url)
+    if lan and not on_host:
+        from app.web.hq import lan_address
+        phone_url = lan_address(port)
+        if phone_url:
+            print(f"\n  On your phone (same Wi-Fi): open {phone_url}\n", flush=True)
     print("\n" + "=" * 64 + f"\n  THE AGENT IS RUNNING.  Open {url} in your browser.\n"
           "  Keep this window open (you can minimise it). Closing it stops the agent.\n"
           "  New lines appear here only when something happens.\n" + "=" * 64 + "\n", flush=True)

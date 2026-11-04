@@ -1,0 +1,50 @@
+# =====================================================================
+#  SKIPPER PACKS — GOALS FOR THE AGENT TEAM
+#  You don't need to edit this file: change everything on the Control Center's Goals page.
+#  These are the starting values, built from your real numbers (15 Oct – 3 Nov 2026,
+#  "Skipper Packs" ad account + Shopify). Day 30/60/90 count from start_date.
+# =====================================================================
+
+start_date: "2026-11-05"
+baseline_period: "15 Oct – 3 Nov 2026 (Skipper Packs ad account + Shopify)"
+north_star: >-
+  Grow profitable sales from Instagram and Facebook — blended ROAS 10 within 90 days —
+  while keeping the brand safe and never inventing prices or offers.
+
+goals:
+  - { key: blended_roas, label: "Blended ROAS (all Shopify sales ÷ Meta ad spend)", unit: "x", better: higher,
+      baseline: 5.9, targets: { 30: 6.5, 60: 8, 90: 10 }, owner: finance }
+  - { key: meta_roas, label: "Meta purchase ROAS", unit: "x", better: higher,
+      baseline: 5.6, targets: { 30: 6, 60: 7.5, 90: 9 }, owner: smo }
+  - { key: aov, label: "Average order value", unit: "₹", better: higher,
+      baseline: 300, targets: { 30: 340, 60: 375, 90: 400 }, owner: finance }
+  - { key: checkout_completion, label: "Checkout completion (paid ÷ reached checkout)", unit: "%", better: higher,
+      baseline: 30, targets: { 30: 35, 60: 38, 90: 40 }, owner: finance }
+  - { key: cpa, label: "Cost per purchase (Meta)", unit: "₹", better: lower,
+      baseline: 60, targets: { 30: 60, 60: 55, 90: 50 }, owner: smo }
+  - { key: link_ctr, label: "Ad link click rate (CTR)", unit: "%", better: higher,
+      baseline: 4.9, targets: { 30: 4, 60: 4, 90: 4 }, owner: smo }
+  - { key: active_ads, label: "Ads running (different creatives)", unit: "", better: higher,
+      baseline: 1, targets: { 30: 5, 60: 8, 90: 10 }, owner: creator }
+  - { key: repeat_rate, label: "Repeat customers", unit: "%", better: higher,
+      baseline: 7, targets: { 30: 9, 60: 12, 90: 15 }, owner: manager }
+  - { key: refund_rate, label: "Refunds / returns (share of sales)", unit: "%", better: lower,
+      baseline: 8, targets: { 30: 8, 60: 7, 90: 6 }, owner: finance }
+  - { key: approval_rate, label: "Drafts you approve first time", unit: "%", better: higher,
+      baseline: null, targets: { 30: 70, 60: 80, 90: 85 }, owner: creator }
+
+# Hard limits. No agent may cross these, even to hit a goal.
+guardrails:
+  daily_ad_budget: 500            # ₹ per day, all Meta ads together
+  monthly_ad_budget: 15000        # ₹ per calendar month
+  max_budget_increase_pct: 20     # biggest single budget raise the team may propose
+  scale_only_if_roas_above: 8     # raise budgets only after 7 days above this blended ROAS
+  ai_cost_monthly: 3000           # ₹ per month for Claude + Gemini
+
+# Your business numbers (used for profit and break-even). Leave empty if unknown.
+business:
+  product_cost_pct: null          # product cost as % of selling price
+  shipping_cost_per_order: null   # ₹
+  payment_fee_pct: null           # % of order value
+  cod_share_pct: null             # % of orders paid cash on delivery
+  rto_pct: null                   # % of COD orders refused / returned

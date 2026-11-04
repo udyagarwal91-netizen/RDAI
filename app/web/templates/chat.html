@@ -32,7 +32,50 @@
   <form method="post" action="{{ url_for('chat_page') }}" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Thinking…'">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <textarea name="message" placeholder="Type here…" required autofocus></textarea>
-    <div class="actions"><button type="submit">Send</button></div>
+    <div class="actions"><button type="submit">Send</button>
+      <button type="button" id="mic" class="secondary">🎙 Speak</button>
+      <label id="mic-file" class="btn secondary" style="display:none; margin:0">🎙 Record a voice note
+        <input type="file" accept="audio/*" capture style="display:none"></label>
+      <span id="mic-status" class="muted"></span></div>
   </form>
+  <script>
+  (() => {
+    const status = document.getElementById("mic-status"), btn = document.getElementById("mic");
+    const csrf = document.querySelector("input[name=csrf]").value;
+    async function send(blob, name) {
+      status.textContent = "Listening to it…";
+      const fd = new FormData(); fd.append("audio", blob, name);
+      const r = await fetch("{{ url_for('chat_voice') }}", {method: "POST", body: fd, headers: {"X-CSRF-Token": csrf}});
+      const j = await r.json().catch(() => ({error: "Something went wrong."}));
+      if (j.error) { status.textContent = "⚠️ " + j.error; return; }
+      location.reload();
+    }
+    // Live recording needs a secure page (your laptop, or the online app). Otherwise use the phone's recorder.
+    if (!(window.isSecureContext && navigator.mediaDevices && window.MediaRecorder)) {
+      btn.style.display = "none";
+      const label = document.getElementById("mic-file"); label.style.display = "inline-block";
+      label.querySelector("input").addEventListener("change", e => {
+        const f = e.target.files[0]; if (f) send(f, f.name || "voice.m4a");
+      });
+      return;
+    }
+    let rec = null, chunks = [];
+    btn.addEventListener("click", async () => {
+      if (rec) { rec.stop(); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        rec = new MediaRecorder(stream); chunks = [];
+        rec.ondataavailable = e => chunks.push(e.data);
+        rec.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          const type = rec.mimeType || "audio/webm"; rec = null;
+          btn.textContent = "🎙 Speak";
+          send(new Blob(chunks, {type}), type.includes("mp4") ? "voice.mp4" : type.includes("ogg") ? "voice.ogg" : "voice.webm");
+        };
+        rec.start(); btn.textContent = "⏹ Stop and send"; status.textContent = "Recording… speak now.";
+      } catch (err) { status.textContent = "⚠️ Allow the microphone in your browser, then try again."; }
+    });
+  })();
+  </script>
 </section>
 {% endblock %}

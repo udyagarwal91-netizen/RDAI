@@ -109,7 +109,7 @@ def create_app() -> Flask:
     @app.context_processor
     def template_globals():
         return {"csrf_token": csrf_token, "brands": list_brands(), "brand_slug": current_brand_slug(),
-                "page": request.endpoint}
+                "page": request.endpoint, "endpoints": set(app.view_functions)}
 
     @app.route("/setup-password", methods=["GET", "POST"])
     def setup_password():
@@ -190,7 +190,8 @@ def create_app() -> Flask:
                                paused=publisher.is_paused(brand) if brand else False,
                                queued=sum(len(g["posts"]) for g in publisher.queue(brand)) if brand else 0,
                                version=updater.installed(), has_github=bool(secrets_store.get("GITHUB_TOKEN")),
-                               next_plan=jobs.next_plan_time(slug) if slug else None)
+                               next_plan=jobs.next_plan_time(slug) if slug else None,
+                               **_dashboard(brand))
 
     @app.route("/action/<action>", methods=["POST"])
     @login_required
@@ -240,7 +241,8 @@ def create_app() -> Flask:
         return render_template("plan.html", brand=brand, brand_error=brand_error,
                                rows=planner.upcoming_plan(brand) if brand else [], price_text=planner.price_text,
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()),
-                               next_plan=jobs.next_plan_time(slug) if slug else None)
+                               next_plan=jobs.next_plan_time(slug) if slug else None,
+                               **_dashboard(brand))
 
     @app.route("/products")
     @login_required
@@ -521,6 +523,9 @@ def create_app() -> Flask:
             abort(404)
         return send_file(path, max_age=0)
 
+    from app.web import hq
+    hq.register(app, login_required, current_brand_slug, _load)
+
     # ---------- Activity ----------
 
     @app.route("/activity")
@@ -558,6 +563,15 @@ def _env_name(name: str, prefix: str) -> str:
     if name in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
         return name
     return prefix + name
+
+
+def _dashboard(brand) -> dict:
+    """Extra Dashboard panels: goal lights, team news, phone access."""
+    from app import goals
+    from app.web.hq import lan_address, on_host
+    port = int(os.environ.get("PORT", 8000))
+    return {"goal_progress": goals.progress(brand) if brand else [],
+            "lan_on": os.environ.get("LAN_ACCESS") == "1", "lan_url": lan_address(port), "on_host": on_host()}
 
 
 def _brand_todo(brand) -> list[tuple[str, str]]:

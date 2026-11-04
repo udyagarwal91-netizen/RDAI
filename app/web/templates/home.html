@@ -1,11 +1,34 @@
 {% extends "base.html" %}
-{% block title %}Home{% endblock %}
+{% block title %}Dashboard{% endblock %}
 {% block body %}
-<h1>{{ brand.name if brand else "Social Agent" }}</h1>
+<h1>{{ brand.name if brand else "Agent HQ" }}</h1>
 <p class="muted">Your control center. Everything the agent needs is set up from here — no files to edit.</p>
 
 {% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
 {% include "_jobs.html" %}
+
+{# ---- Goals at a glance ---- #}
+{% if goal_progress %}
+<section class="card">
+  <div class="row-head"><h2>🎯 Goals</h2><a href="{{ url_for('goals_page') }}">All goals →</a></div>
+  <div class="kpis">
+    {% for p in goal_progress[:6] %}
+    <div class="kpi"><span class="dot {{ p.status }}"></span> <span class="muted">{{ p.label }}</span>
+      <b>{% if p.current is none %}—{% else %}{{ p.unit if p.unit == "₹" }}{{ p.current }}{{ p.unit if p.unit != "₹" }}{% endif %}</b>
+      <span class="muted">target day 90: {{ p.unit if p.unit == "₹" }}{{ p.final }}{{ p.unit if p.unit != "₹" }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% if team_news is defined and team_news %}
+<section class="card">
+  <div class="row-head"><h2>🧠 Latest from your team</h2><a href="{{ url_for('team_page') }}">Team room →</a></div>
+  {% for b in team_news %}
+  <div class="feed-item"><span class="agent-tag">{{ b.icon }} {{ b.agent_name }}</span> · {{ b.title }}
+    <span class="muted">· {{ b.created_at }}</span></div>
+  {% endfor %}
+</section>
+{% endif %}
 
 {# ---- What to do next ---- #}
 <section class="card">
@@ -138,4 +161,46 @@
     {% endfor %}
   </div>
 </section>
+
+{# ---- Phone ---- #}
+{% if not on_host %}
+<section class="card">
+  <h2>📱 Use on your phone</h2>
+  {% if lan_on %}
+    <p>✅ Phone access is on. On your phone, connected to the <b>same Wi-Fi</b>, open
+       <b>{{ lan_url or "this computer's address" }}</b> and log in with your password.
+       Then tap Share → <b>Add to Home Screen</b> (iPhone) or ⋮ → <b>Add to Home screen</b> (Android).</p>
+    <p class="muted">Works only at home while this computer is on. For anywhere, move the agent to Railway (see Help).</p>
+  {% else %}
+    <p>Open this app on your phone when you're on the same Wi-Fi as this computer.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('phone_access') }}" class="actions">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="on" value="{{ '0' if lan_on else '1' }}">
+    <button type="submit" class="{{ 'secondary' if lan_on else '' }}" data-busy="Restarting…">
+      {{ "Switch phone access off" if lan_on else "Switch on phone access" }}</button>
+    <span class="muted">The agent restarts (about 10 seconds).</span>
+  </form>
+</section>
+{% endif %}
+{# ---- Phone ---- #}
+{% if not on_host %}
+<section class="card">
+  <h2>📱 Use on your phone</h2>
+  {% if lan_on %}
+    <p>✅ Phone access is on. On your phone, connected to the <b>same Wi-Fi</b>, open
+       <b>{{ lan_url or "this computer's address" }}</b> and log in with your password.
+       Then tap Share → <b>Add to Home Screen</b> (iPhone) or ⋮ → <b>Add to Home screen</b> (Android).</p>
+    <p class="muted">Works only at home while this computer is on. For anywhere, move the agent to Railway (see Help).</p>
+  {% else %}
+    <p>Open this app on your phone when you're on the same Wi-Fi as this computer.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('phone_access') }}" class="actions">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="on" value="{{ '0' if lan_on else '1' }}">
+    <button type="submit" class="{{ 'secondary' if lan_on else '' }}" data-busy="Restarting…">
+      {{ "Switch phone access off" if lan_on else "Switch on phone access" }}</button>
+    <span class="muted">The agent restarts (about 10 seconds).</span>
+  </form>
+</section>
+{% endif %}
+
 {% endblock %}

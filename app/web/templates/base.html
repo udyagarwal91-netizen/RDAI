@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>{% block title %}Control Center{% endblock %} · Social Agent</title>
+<title>{% block title %}Control Center{% endblock %} · Agent HQ</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0B2545">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Agent HQ">
+<link rel="apple-touch-icon" href="/app-icon-180.png">
 <style>
   :root { --bg:#f6f5f1; --card:#fff; --ink:#1b1f24; --muted:#66707a; --line:#e3e1db; --soft:#efede7;
           --brand:#0B2545; --brand-ink:#fff; --ok:#1e7a46; --okbg:#e6f4ec; --err:#a62b1f; --errbg:#fbeae7;
@@ -22,6 +27,16 @@
                gap:12px; flex-wrap:wrap; }
   .logo { font-weight:700; color:var(--brand); margin-right:auto; }
   nav { display:flex; gap:4px; flex-wrap:wrap; }
+  @media (max-width:700px) {  /* phones: one swipeable row of tabs */
+    nav { order:3; width:100%; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    nav a { flex:0 0 auto; }
+    main { padding:14px 12px 72px; }
+    .card { padding:14px; }
+  }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--line); }
+  .dot.green { background:var(--ok); } .dot.amber { background:#d9a400; } .dot.red { background:var(--err); }
+  .feed-item { border-top:1px solid var(--line); padding:12px 0; } .feed-item:first-child { border-top:0; }
+  .agent-tag { font-weight:700; } .md { white-space:pre-wrap; font-size:14px; }
   nav a { padding:6px 9px; border-radius:8px; text-decoration:none; color:var(--muted); font-weight:500; font-size:14px; }
   nav a.on { background:var(--soft); color:var(--ink); }
   main { max-width:960px; margin:0 auto; padding:20px 16px 72px; }
@@ -126,18 +141,15 @@
 <body>
 {% if session.get("logged_in") %}
 <div class="top"><div class="top-inner">
-  <span class="logo">Social Agent</span>
+  <span class="logo">Agent HQ</span>
   <nav>
-    <a href="{{ url_for('home') }}" class="{{ 'on' if page == 'home' }}">Home</a>
-    <a href="{{ url_for('chat_page') }}" class="{{ 'on' if page == 'chat_page' }}">Chat</a>
-    <a href="{{ url_for('plan_page') }}" class="{{ 'on' if page == 'plan_page' }}">Plan</a>
-    <a href="{{ url_for('drafts_page') }}" class="{{ 'on' if page == 'drafts_page' }}">Drafts</a>
-    <a href="{{ url_for('queue_page') }}" class="{{ 'on' if page == 'queue_page' }}">Queue</a>
-    <a href="{{ url_for('performance_page') }}" class="{{ 'on' if page == 'performance_page' }}">Performance</a>
-    <a href="{{ url_for('products_page') }}" class="{{ 'on' if page == 'products_page' }}">Products</a>
-    <a href="{{ url_for('connect') }}" class="{{ 'on' if page == 'connect' }}">Connect accounts</a>
-    <a href="{{ url_for('brand_page') }}" class="{{ 'on' if page == 'brand_page' }}">Brand</a>
-    <a href="{{ url_for('activity') }}" class="{{ 'on' if page == 'activity' }}">Activity</a>
+    {% for ep, label in [("home", "Dashboard"), ("chat_page", "Chat"), ("team_page", "Team"), ("goals_page", "Goals"),
+                         ("plan_page", "Plan"), ("drafts_page", "Drafts"), ("queue_page", "Queue"),
+                         ("campaigns_page", "Ads"), ("finance_page", "Money"), ("research_page", "Research"),
+                         ("performance_page", "Results"), ("products_page", "Products"), ("connect", "Connect"),
+                         ("brand_page", "Brand"), ("activity", "Activity")] %}
+      {% if ep in endpoints %}<a href="{{ url_for(ep) }}" class="{{ 'on' if page == ep }}">{{ label }}</a>{% endif %}
+    {% endfor %}
   </nav>
   {% if brands|length > 1 %}
   <form method="post" action="{{ url_for('switch_brand') }}">
@@ -160,6 +172,7 @@
   {% block body %}{% endblock %}
 </main>
 <script>
+  if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js").catch(() => {}); }
   // Show "Working…" on any button that submits a slow form, and stop double clicks.
   document.addEventListener("submit", (e) => {
     const btn = e.submitter;
