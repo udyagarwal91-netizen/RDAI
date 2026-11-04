@@ -291,11 +291,27 @@ class Bot:
                     except TelegramError as e:
                         log.warning("Telegram bot: %s", e)
             except TelegramError as e:
-                log.warning("Telegram bot: %s", e)
+                if "conflict" in str(e).lower():
+                    self._two_copies(brand)
+                else:
+                    log.warning("Telegram bot: %s", e)
                 self._stop.wait(15)
             except Exception:
                 log.exception("Telegram bot: unexpected problem")
                 self._stop.wait(15)
+
+    def _two_copies(self, brand: Brand) -> None:
+        """Telegram says another copy of the agent is listening (e.g. laptop AND Railway). Warn loudly, hourly."""
+        now = time.time()
+        if now - getattr(self, "_warned", 0) < 3600:
+            return
+        self._warned = now
+        log.error("TWO COPIES OF THE AGENT ARE RUNNING (Telegram conflict). Close one — they would post twice.")
+        try:
+            send_message(brand, "⚠️ <b>Two copies of the agent are running</b> (for example on your laptop and online). "
+                                "Close one now — otherwise posts could go out twice.")
+        except TelegramError:
+            pass
 
     # -------- text messages and commands
 

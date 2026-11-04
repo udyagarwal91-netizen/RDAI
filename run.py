@@ -23,7 +23,7 @@ from app import secrets_store
 
 secrets_store.load_env()  # must happen before anything reads a key
 
-from app.brands import BrandConfigError, list_brands, load_brand  # noqa: E402
+from app.brands import BrandConfigError, list_brands, load_brand, seed_brands  # noqa: E402
 from app import jobs, renderer, telegram  # noqa: E402
 from app.db import DB_PATH, init_db  # noqa: E402
 from app.logging_setup import setup_logging  # noqa: E402
@@ -51,6 +51,9 @@ def main() -> None:
     init_db()
     log.info("Database ready at %s", DB_PATH)
 
+    copied = seed_brands()
+    if copied:
+        log.info("Copied %d brand file(s) to the permanent disk", copied)
     brands = list_brands()
     if not brands:
         log.warning("No brands found. Expected brands/<name>/config.yaml")

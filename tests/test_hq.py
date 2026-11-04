@@ -92,3 +92,37 @@ def test_browser_recording_converts_to_mp3(tmp_path):
     from app import voice
     mp3 = voice.to_mp3(src.read_bytes(), ".webm")
     assert len(mp3) > 1000 and (mp3[:3] == b"ID3" or mp3[0] == 0xFF)
+
+
+def test_brands_are_copied_to_the_cloud_disk_without_overwriting(sandbox, tmp_path, monkeypatch):
+    from app import brands
+    disk = tmp_path / "disk_brands"
+    (disk / "skipperpacks").mkdir(parents=True)
+    (disk / "skipperpacks" / "brand-rules.md").write_text("MY EDITED RULES", encoding="utf-8")
+    monkeypatch.setattr(brands, "BRANDS_DIR", disk)
+    copied = brands.seed_brands()
+    assert copied > 3 and (disk / "skipperpacks" / "config.yaml").exists()
+    assert (disk / "skipperpacks" / "brand-rules.md").read_text(encoding="utf-8") == "MY EDITED RULES"
+    assert brands.seed_brands() == 0
+
+
+def test_two_copies_warning(sandbox, monkeypatch):
+    from app import telegram
+    sent = []
+    monkeypatch.setattr(telegram, "send_message", lambda b, t: sent.append(t))
+    bot = telegram.Bot(lambda: None)
+    bot._two_copies(load_brand("skipperpacks"))
+    bot._two_copies(load_brand("skipperpacks"))  # not repeated within the hour
+    assert len(sent) == 1 and "Two copies" in sent[0]
+
+
+def test_online_updates_and_secure_cookies(sandbox, monkeypatch):
+    import pytest as _pytest
+
+    from app import jobs, updater
+    import app.web as web
+    monkeypatch.setenv("PORT", "8080")
+    with _pytest.raises(updater.UpdateError, match="updates itself"):
+        jobs.update("skipperpacks")
+    secrets_store.save("FLASK_SECRET_KEY", "x" * 64)
+    assert web.create_app().config["SESSION_COOKIE_SECURE"] is True

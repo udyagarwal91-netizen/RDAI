@@ -11,7 +11,8 @@ The owner is not a coder: user-facing text, docs and error messages must be plai
 
 Build roadmap (one phase at a time, confirm with the owner after each): 0 setup ✅ → 1 Shopify sync + weekly plan
 on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval ✅ → 2b reels ✅ → 3 publishing ✅ → 4 insights ✅ (2b/3/4 awaiting owner's live test)
-→ 5 extras. The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
+→ A–F agent team + Agent HQ app ✅ (built overnight 2026-11-04/05, awaiting owner's live test) → 5 extras
+(WhatsApp follow-ups, YouTube Shorts, Google Ads — need the owner's accounts first). The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
 (deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week, AI images may mix
 product-only / dressed-model / website-style model shots (owner chose a mix; brand form can restrict).
 Meta ads: use ONLY the "Skipper Packs" ad account (act_1840946140217408, business "Skipper Packs"); ignore every
@@ -111,6 +112,34 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   logged) → `voice.transcribe` (Gemini Interactions `gemini-3.8-flash`, audio input, ≤3 min; config `ai_voice.model`)
   → echoed "🎙 I heard" → same path (also feeds awaiting_regen/awaiting_caption). `jobs.plan(note=)` /
   `planner.make_plan(note=)` pass the owner's wishes into the plan prompt.
+- Agent HQ (Phase A): `app/goals.py` — goals/guardrails/business numbers from `brands/<slug>/goals.yaml`, owner
+  edits stored in `app_state goals` (wins over the file); measured values in `app_state metrics:latest`
+  (`goals.record`), traffic lights by straight-line interpolation baseline→day 30/60/90; `summary_for_agents` is the
+  ONLY source of targets in agent prompts. `app/web/hq.py` registers Goals, Team, Research, Money, Ads, phone access
+  (`LAN_ACCESS=1` → host 0.0.0.0 + restart via exit 3), `/chat/voice` (browser recording → `voice.to_mp3` with bundled
+  FFmpeg → Gemini → assistant), PWA manifest/icon/service worker. Nav links render only for registered endpoints.
+- Agent team (`app/team/`): six agents (`AGENTS`), playbooks in `app/team/skills/<agent>.md` with owner overrides in
+  `brands/<slug>/skills/` (Team page). They communicate via `team_briefs` (kinds market/direction/smo/finance/
+  campaign_plan/report) and `team_decisions` (check date → Manager judges worked/did_not_work/unclear).
+  `researcher` = Instagram Business Discovery for `app_state team:competitors` + `claude.research`
+  (`web_search_20260209`, pause_turn resumed, US$0.01/search) → structured brief; also `review_plan` (one revision).
+  `manager.direct` → plan_instructions (planner note) + creator_notes (`app_state team:creator_notes`, read by
+  `writer.team_guidance`); `manager.weekly_report` Monday 09:30. `meeting.run` = weekly timer (`team_week`, replaces
+  the plain plan): research → smo/finance weekly briefs → direction → plan → review → `campaigns.plan`. Each step's
+  failure is noted and skipped; the plan is always made.
+- Money (Phases D/E): `app/meta_ads.py` reads ONLY the brand's ad account (`app_state meta:ad_account`, auto-picked
+  by exact name match in `discover`, also from the Meta key test) → `ads_daily` + `meta:structure` (budgets in paise
+  → ₹). `app/sales.py` (needs read_orders; funnel via `shopifyqlQuery` needs read_reports) → `sales_daily`.
+  `team/finance.measure` computes blended/Meta ROAS, AOV, CPA, CTR, checkout completion etc. in code →
+  `goals.record`; `alerts` once per day per kind (overspend, spend-no-sales, Meta vs Shopify >40% → sets
+  `finance:tracking_suspect` which freezes budget raises, month pacing, AI cost). Daily 08:05 `money` job; `smo.daily_tick`
+  proposes pauses for clear losers (rules, no AI). All ad changes are `ad_proposals` → `proposals.check` guardrails
+  (daily/monthly cap, max raise %, raise only if blended ROAS ≥ limit) at creation AND execution →
+  Telegram `ad:y|n:<id>` / Ads page → `jobs.ad_action` → `team/ad_actions.execute`. Retarget/boost create campaign,
+  ad set and ad PAUSED, then a second `activate` proposal. Only ids in the brand's own account structure are touched.
+- Hosting (Phase F): `Dockerfile` (Playwright 1.64.0 image, TZ Asia/Kolkata, DATA/LOGS/ENV/BRANDS on `/data`);
+  `brands.seed_brands` copies missing brand files to `BRANDS_DIR` (never overwrites); online (`PORT` set): secure
+  cookies, Update button disabled (Railway redeploys); Telegram getUpdates conflict → "two copies running" warning.
 - `app/calendar_india.py` — only high-confidence festival dates (lunar ones marked approx) + owner's custom dates.
 - `app/secrets_store.py` — the only code that reads/writes keys. `.env` is loaded with `override=False`, so host
   env vars (Railway/Render) win. `save()` rewrites one line atomically and updates `os.environ` live.

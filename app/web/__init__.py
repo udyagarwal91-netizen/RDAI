@@ -62,7 +62,9 @@ def create_app() -> Flask:
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         # On Railway/Render the site is https; set COOKIE_SECURE=1 there.
-        SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1",
+        # Online (Railway/Render set PORT) the site is https, so cookies are https-only unless COOKIE_SECURE=0.
+        SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE") == "1" or
+        ("PORT" in os.environ and os.environ.get("COOKIE_SECURE") != "0"),
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
         MAX_CONTENT_LENGTH=6 * 1024 * 1024,  # logo uploads
     )

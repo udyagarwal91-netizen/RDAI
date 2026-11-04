@@ -74,6 +74,9 @@ def send_plan(slug: str) -> str:
 
 
 def update(slug: str) -> str:
+    if "PORT" in os.environ:  # online hosting rebuilds from GitHub by itself
+        raise updater.UpdateError("Online, the agent updates itself when a new version is published — "
+                                  "no button needed.")
     busy = [a for s, a in _running if a != "update"]
     if busy:
         raise updater.UpdateError("The agent is busy right now. Try again in a minute, when it has finished.")

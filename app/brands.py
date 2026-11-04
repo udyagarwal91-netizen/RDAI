@@ -10,7 +10,9 @@ from pathlib import Path
 
 from ruamel.yaml import YAML, YAMLError
 
-from app import BRANDS_DIR, secrets_store
+import shutil
+
+from app import BRANDS_DIR, REPO_BRANDS_DIR, secrets_store
 
 REQUIRED_SECTIONS = ["brand", "shopify", "meta", "schedule", "content_mix", "style", "voice"]
 
@@ -46,6 +48,21 @@ class Brand:
         return secrets_store.get(prefix + key_name) or (
             secrets_store.get(key_name) if key_name in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY") else None
         )
+
+
+def seed_brands() -> int:
+    """When brands live on a separate disk (BRANDS_DIR), copy in any brand files that aren't there yet.
+    Existing files are never overwritten — your Control Center changes are kept. Returns files copied."""
+    if BRANDS_DIR.resolve() == REPO_BRANDS_DIR.resolve() or not REPO_BRANDS_DIR.exists():
+        return 0
+    copied = 0
+    for src in REPO_BRANDS_DIR.rglob("*"):
+        dest = BRANDS_DIR / src.relative_to(REPO_BRANDS_DIR)
+        if src.is_file() and not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            copied += 1
+    return copied
 
 
 def list_brands() -> list[str]:

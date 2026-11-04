@@ -34,6 +34,14 @@ The agent writes down what it heard, does it, and for anything that changes what
 (approve, reject, post now, cancel, resume posting, saving a brand rule) it first asks
 **"Should I…? ✅ Yes / ❌ No"**. The /commands still work as shortcuts.
 
+**Your agent team:** six AI specialists work together every week — 🔎 Market Researcher (competitors, trends,
+customer words), 🗺 Content Planner (weekly plan + Meta ad campaign structure), 🎨 Content Creator (hooks, captions,
+images, reels), 📈 SMO (what to stop, scale or fix), 💰 Finance (ROAS, budgets, break-even, the ROAS 10 roadmap)
+and 🧠 Manager (decides, logs decisions, reports to you on Monday). See the **Team**, **Goals**, **Money** and
+**Ads** pages. Any change that spends money waits for your ✅; new ads are created paused.
+
+**On your phone:** switch on phone access on the Dashboard (same Wi-Fi), or move online — see `docs/DEPLOY.md`.
+
 ---
 
 ## How the pieces connect (plain English)

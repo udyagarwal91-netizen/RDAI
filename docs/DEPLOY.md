@@ -1,46 +1,54 @@
-# Moving to Railway (when you want it running 24/7)
+# Moving the agent online (Railway) — use it from your phone, anywhere
 
-You chose laptop-only for now. This page is ready for when you switch.
-Cost: about US$5/month on Railway's Hobby plan.
+Cost: about **US$5/month** (Railway Hobby plan) plus your usual Claude/Gemini usage.
+Time: about 30–45 minutes, once. Your laptop is no longer needed afterwards.
+
+> ⚠️ **Only one copy may run.** When the online agent is working, close the agent on your laptop for good
+> (close the black window). Two copies would post everything twice. If it ever happens, Telegram warns you.
 
 ## 1. Create the service
-1. Sign up at https://railway.com with your GitHub account.
-2. **New Project → Deploy from GitHub repo** → choose this repository.
-3. Railway detects Python and runs `python run.py` (we'll add the start
-   command file during deployment if needed).
+1. Go to https://railway.com → **Login with GitHub** (the same GitHub account that has the agent).
+2. **New Project → Deploy from GitHub repo** → pick **rdai**.
+3. Open the new service → **Settings → Source → Branch** → choose `claude/new-session-dm5omt`.
+   Railway sees the `Dockerfile` and builds it (the first build takes ~5 minutes).
+   From now on, every new version I publish installs itself — no Update button needed online.
 
-## 2. Add a disk so the database survives restarts
-1. In the service, open **Settings → Volumes → Add volume**.
-2. Mount path: `/data`.
+## 2. Add the permanent disk (keeps your data, settings and pictures)
+1. In the service: **Settings → Volumes → Add volume** (or right-click the service → Attach volume).
+2. Mount path: `/data` → **Add**.
 
-## 3. Paste your keys (Railway's "Variables" screen)
-Service → **Variables** tab → **New Variable**, one per line. Same names as
-your `.env` file:
+## 3. Paste your keys
+Service → **Variables** → **Raw Editor** → paste the contents of your laptop's `.env` file
+(open `C:\SkipperAgent\.env` in Notepad → Ctrl+A → Ctrl+C), then **Update variables**.
+Then add these lines too (Raw Editor again):
 
-| Name | Value |
-|------|-------|
-| `ANTHROPIC_API_KEY` | your Claude key |
-| `GEMINI_API_KEY` | your Gemini key |
-| `SHOPIFY_CLIENT_ID` | from Shopify Dev Dashboard |
-| `SHOPIFY_CLIENT_SECRET` | from Shopify Dev Dashboard |
-| `META_ACCESS_TOKEN` | your Meta system user token |
-| `TELEGRAM_BOT_TOKEN` | from BotFather |
-| `TELEGRAM_CHAT_ID` | your chat ID (found automatically on your laptop; copy it from your .env file) |
-| `SETTINGS_PASSWORD` | a password for the online Control Center |
-| `FLASK_SECRET_KEY` | any long random text (e.g. mash the keyboard for 40 characters) |
-| `DATA_DIR` | `/data` |
-| `LOGS_DIR` | `/data/logs` |
-| `ENV_FILE` | `/data/.env` |
-| `COOKIE_SECURE` | `1` |
+```
+SETTINGS_PASSWORD=choose-a-strong-password-for-the-online-app
+LAN_ACCESS=0
+```
 
-Tip: Railway's **Raw Editor** button lets you paste your whole local `.env`
-in one go — then add the last five rows above.
+(`DATA_DIR`, `LOGS_DIR`, `ENV_FILE`, `BRANDS_DIR` and the time zone are already set by the Dockerfile.)
 
-Click **Deploy**. Under **Settings → Networking → Generate Domain** you get
-a web address for the Control Center.
+## 4. Get your web address
+**Settings → Networking → Generate Domain**. You get an address like
+`https://skipper-agent-production.up.railway.app`. Open it, log in with the password from step 3.
+
+## 5. Put it on your phone
+- iPhone (Safari): open the address → **Share → Add to Home Screen**.
+- Android (Chrome): open the address → **⋮ → Add to Home screen / Install app**.
+It opens like an app, with voice notes in **Chat** (tap 🎙 Speak).
+
+## 6. First run online
+1. **Connect accounts → Check all connections** (everything should turn green — same keys as the laptop).
+2. **Brand** page: check your settings (they start from the brand files; logo too).
+3. **Products → Get products from Shopify**, then **Team → Full team meeting** to make this week's plan.
+4. Close the laptop agent for good.
+
+## What's different online
+- Plans, drafts and history start fresh (the laptop's database stays on the laptop).
+- Settings you change in the app are saved on the `/data` disk and survive new versions.
+- The page is only reachable over https, with your password, login lockout and https-only cookies.
 
 ## Render (alternative)
-Same idea: **New → Web Service** → connect the repo → Start command
-`python run.py` → **Environment** tab for the same variables → add a **Disk**
-mounted at `/data` (needs a paid instance; the free tier sleeps and would
-miss scheduled posts).
+Same idea: **New → Web Service** → connect the repo (it uses the Dockerfile) → **Environment** for the same
+variables → add a **Disk** mounted at `/data` (paid instance needed; the free tier sleeps and would miss posts).
