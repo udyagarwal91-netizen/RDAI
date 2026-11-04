@@ -40,6 +40,8 @@ class StudioClaude:
             answer = {"caption": self.caption, "hashtags": ["#Innerwear", "ValuePack"], "headline": "Roz ka comfort",
                       "subline": "3-pc Active Brief", "photo_index": 0, "image_style": self.style,
                       "scene": "Folded packs on a wooden shelf, morning light",
+                      "hook_options": ["Roz ka comfort", "Elastic digging in?", "3 for ₹249"],
+                      "hook_reason": "Everyday comfort is the top customer worry.", "funnel_stage": "considering",
                       "slides": [{"headline": "Wash cold", "body": "Keeps the waistband springy."},
                                  {"headline": "Air dry", "body": "Shade, not sun."}]}
         else:  # checker

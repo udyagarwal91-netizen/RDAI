@@ -177,10 +177,20 @@ Formats you can choose:
 Plan well: vary styles across the week (don't repeat a style on consecutive slots unless there are very few styles),
 favour newly added and well-stocked styles, build up to upcoming festivals, and avoid repeating recent ideas.
 
+Your skill playbook as the team's Content Planner (follow it; ad campaigns are planned in a separate step):
+<playbook>
+{_playbook(brand)}
+</playbook>
+
 The brand's own rules, written by the owner (follow them):
 <brand_rules>
 {brand.rules.strip()}
 </brand_rules>"""
+
+
+def _playbook(brand: Brand) -> str:
+    from app import team
+    return team.skill(brand, "planner").strip()
 
 
 def user_prompt(brand: Brand, styles: list[dict], slots: list[Slot], themes: dict, formats: dict, reel_cap: int,

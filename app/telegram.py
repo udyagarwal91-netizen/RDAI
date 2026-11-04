@@ -211,6 +211,9 @@ def format_draft(brand: Brand, d: dict, header: str = "📝") -> str:
     if d.get("image_style") and d["image_style"] != "template":
         lines.append(f"<i>AI image style: {esc(d['image_style'].replace('_', ' '))}</i>")
     text = "\n".join(lines) + f"\n\n{esc(d['caption'])}"
+    why = (d.get("creative") or {}).get("hook_reason")
+    if why:
+        text += f"\n\n💡 <i>Why this hook: {esc(why)}</i>"
     if d["warnings"]:
         text += "\n\n" + "\n".join(f"⚠️ {esc(w)}" for w in d["warnings"])
     text += f"\n\n<i>Cost about US${d['cost_usd']:.2f}" + (f" · version {d['attempt']}" if d["attempt"] > 1 else "") + "</i>"

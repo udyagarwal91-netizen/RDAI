@@ -30,6 +30,8 @@
         {% if d.image_style and d.image_style != "template" %}<span class="pill soon">{{ d.image_style.replace('_', ' ') }}</span>{% endif %}</div>
       {% for p in d.products[:1] %}<div>🛍 {{ p.title }}{% if p.pack_size %} ({{ p.pack_size }}-pc){% endif %} — <b>{{ price_text(p) }}</b></div>{% endfor %}
       {% for w in d.warnings %}<div class="warn-line">⚠️ {{ w }}</div>{% endfor %}
+      {% if d.creative.hook_reason %}<div class="muted" style="margin-top:6px">💡 {{ d.creative.hook_reason }}
+        {% if d.creative.hook_options %}<br>Other hooks considered: {{ d.creative.hook_options[1:]|join(" · ") }}{% endif %}</div>{% endif %}
       <details><summary>Caption</summary>
         <form method="post" action="{{ url_for('draft_decision', draft_id=d.id, decision='edit_caption') }}">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">

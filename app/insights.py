@@ -118,7 +118,7 @@ def latest(brand: Brand, days: int = 7) -> list[dict]:
     since = (datetime.now(ZoneInfo("UTC")) - timedelta(days=days)).isoformat()[:10]
     with connect() as conn:
         rows = conn.execute("""
-            SELECT i.*, p.platform, p.permalink, p.published_at, p.draft_id, p.scheduled_for,
+            SELECT i.*, p.platform, p.permalink, p.published_at, p.draft_id, p.scheduled_for, p.platform_post_id,
                    d.format, d.theme, d.image_style, d.caption, cp.idea
             FROM insights i
             JOIN (SELECT post_id, MAX(id) AS last_id FROM insights GROUP BY post_id) li ON li.last_id = i.id

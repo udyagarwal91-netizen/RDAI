@@ -78,10 +78,41 @@ morning routine), slow camera movement and mood — no text on screen. Keep reel
 Carousel posts need 2–3 "slides" (headline max 6 words + body max 25 words each) for the middle of the carousel —
 the agent adds a cover slide and a final price slide itself. Other formats: return an empty slides list.
 
+Hooks: also return "hook_options" — 3 different opening lines you considered (the first one is the one you used,
+in the caption and/or headline) — and "hook_reason": one sentence on why that hook should work for this audience.
+"funnel_stage": who this post is mainly for — new_people (awareness), considering (proof), ready_to_buy (offer/value).
+
+Your skill playbook (follow it):
+<playbook>
+{_playbook(brand)}
+</playbook>
+
 The owner's brand rules (follow them):
 <brand_rules>
 {brand.rules.strip()}
 </brand_rules>"""
+
+
+def _playbook(brand: Brand) -> str:
+    from app import team
+    return team.skill(brand, "creator").strip()
+
+
+def team_guidance(brand: Brand) -> str:
+    """This week's notes from the Manager and hooks the Researcher found (empty if the team hasn't met yet)."""
+    from app import team
+    from app.db import get_state
+    parts = []
+    notes = get_state(brand.slug, "team:creator_notes")
+    if notes:
+        parts.append(f"The Manager's guidance this week: {notes}")
+    market = team.latest(brand, "market")
+    if market and market["data"].get("hooks_to_try"):
+        parts.append("Hooks the Market Researcher found working (adapt, never copy): "
+                     + "; ".join(market["data"]["hooks_to_try"][:5]))
+    if market and market["data"].get("customer_words"):
+        parts.append("Words real customers use: " + "; ".join(market["data"]["customer_words"][:6]))
+    return "\n".join(parts)
 
 
 def schema(n_photos: int, styles: list[str]) -> dict:
@@ -95,12 +126,16 @@ def schema(n_photos: int, styles: list[str]) -> dict:
             "photo_index": {"type": "integer", "enum": list(range(max(n_photos, 1)))},
             "image_style": {"type": "string", "enum": styles},
             "scene": {"type": "string"},
+            "hook_options": {"type": "array", "items": {"type": "string"}},
+            "hook_reason": {"type": "string"},
+            "funnel_stage": {"type": "string", "enum": ["new_people", "considering", "ready_to_buy"]},
             "slides": {"type": "array", "items": {
                 "type": "object",
                 "properties": {"headline": {"type": "string"}, "body": {"type": "string"}},
                 "required": ["headline", "body"], "additionalProperties": False}},
         },
-        "required": ["caption", "hashtags", "headline", "subline", "photo_index", "image_style", "scene", "slides"],
+        "required": ["caption", "hashtags", "headline", "subline", "photo_index", "image_style", "scene", "slides",
+                     "hook_options", "hook_reason", "funnel_stage"],
         "additionalProperties": False,
     }
 
@@ -126,6 +161,9 @@ The product photos follow, numbered from 0."""}]
     for i, url in enumerate(photos):
         content += [{"type": "text", "text": f"Photo {i}:"},
                     {"type": "image", "source": {"type": "url", "url": media.sized_url(url, 600)}}]
+    guidance = team_guidance(brand)
+    if guidance:
+        content.append({"type": "text", "text": guidance})
     if post.get("owner_note"):
         content.append({"type": "text", "text": "The owner asked for this new version — follow it closely (unless it "
                         f"breaks the non-negotiable rules), including in the picture brief: {post['owner_note']}"})
