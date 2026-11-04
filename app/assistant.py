@@ -79,10 +79,16 @@ TOOLS += [
     _tool("run_team_meeting", "Start the full weekly team meeting now (research → Manager's direction → new plan → "
           "review → ad plan). 3–6 minutes, about ₹40–80. Replaces posts that are only planned."),
     _tool("run_research", "Start fresh market research now (competitors, trends, dates). 2–4 minutes, about ₹15–30."),
+    _tool("money_and_ads", "Latest ad and sales numbers from the Finance agent (spend, ROAS, blended ROAS, order "
+          "value, cost per purchase, CTR, checkout completion, COD share) and ad changes waiting for the owner's OK."),
+    _tool("refresh_money", "Fetch fresh Meta ads and Shopify sales numbers now (free, ~30 seconds)."),
+    _tool("answer_ad_change", "Approve or decline an ad change the team proposed (by its number). Owner confirms "
+          "with a button.", {"proposal_id": {"type": "integer"}, "approve": {"type": "boolean"}},
+          ["proposal_id", "approve"]),
 ]
 
 NEEDS_CONFIRMATION = {"approve_draft", "reject_draft", "post_now", "cancel_post", "resume_posting",
-                      "remember_instruction"}
+                      "remember_instruction", "answer_ad_change"}
 
 
 def _json(value) -> str:
@@ -213,6 +219,16 @@ def run_tool(brand: Brand, name: str, args: dict) -> str:
     if name == "run_team_meeting":
         return "Team meeting started; results arrive on Telegram in 3–6 minutes." if _start(brand, "team_week") \
             else "A team meeting is already running."
+    if name == "money_and_ads":
+        from app.team import finance, proposals
+        m = finance.latest_numbers(brand)
+        waiting = [f"#{p['id']}: {p['summary']} (why: {p['reason']})" for p in proposals.listing(brand, "proposed")]
+        return _json({"numbers": {k: m[k] for k in ("metrics", "ads", "sales", "break_even_roas", "month_spend",
+                                                     "problems", "measured_at")} if m else "not measured yet",
+                      "ad_changes_waiting": waiting})
+    if name == "refresh_money":
+        return "Fetching ad and sales numbers; they appear on the Money page in about 30 seconds." \
+            if _start(brand, "money") else "Already fetching."
     if name == "run_research":
         return "Market research started; the brief arrives in 2–4 minutes." if _start(brand, "research") \
             else "Research is already running."
@@ -231,8 +247,18 @@ def describe(brand: Brand, name: str, args: dict) -> str:
         "post_now": f"Post {what} right now on Instagram and Facebook",
         "cancel_post": f"Stop {what} from being posted",
         "resume_posting": "Resume posting (anything overdue goes out within a minute)",
+        "answer_ad_change": _ad_change_text(brand, args),
         "remember_instruction": f"Add this to your brand rules for all future posts: “{args.get('instruction', '')}”",
     }[name]
+
+
+def _ad_change_text(brand: Brand, args: dict) -> str:
+    if "proposal_id" not in args:
+        return "Answer an ad change the team proposed"
+    from app.team import proposals
+    p = proposals.get(brand, int(args["proposal_id"]))
+    what = p["summary"] if p else f"ad change #{args['proposal_id']}"
+    return f"{'Approve' if args.get('approve') else 'Decline'} {what}"
 
 
 def ask_confirmation(brand: Brand, name: str, args: dict) -> dict:
@@ -269,6 +295,10 @@ def confirm(brand: Brand, token: str, yes: bool) -> str:
     if not yes:
         return "OK, I didn't do it."
     name, args = item["tool"], item["args"]
+    if name == "answer_ad_change":
+        from app import jobs
+        ok = jobs.start(brand.slug, "ad_action", pid=int(args["proposal_id"]), yes=bool(args["approve"]))
+        return "Working on it — the result arrives in a moment." if ok else "Another ad change is running; try again."
     log.info("Owner confirmed: %s %s", name, args)
     if name == "resume_posting":
         publisher.set_paused(brand, False)

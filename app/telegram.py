@@ -494,6 +494,18 @@ class Bot:
             self._clear_buttons(token, chat_id, q)
             send_message(brand, esc(assistant.confirm(brand, raw_id, action == "k")))
             return
+        if action == "ad":  # ✅ / ❌ on an ad change the team proposed
+            from app import jobs
+            answer, _, raw = raw_id.partition(":")
+            _call(token, "answerCallbackQuery", callback_query_id=q["id"])
+            self._clear_buttons(token, chat_id, q)
+            if not raw.isdigit():
+                return
+            if jobs.start(brand.slug, "ad_action", pid=int(raw), yes=(answer == "y")):
+                send_message(brand, "Working on it…" if answer == "y" else "OK.")
+            else:
+                send_message(brand, "Another ad change is being made — press the button again in a minute.")
+            return
         if action in ("p", "s"):  # post-level buttons: post now / try again, skip
             self._post_button(brand, q, token, action, int(raw_id) if raw_id.isdigit() else 0)
             return

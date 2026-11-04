@@ -92,8 +92,11 @@ secret**; the agent swaps them for a fresh access key every day by itself.
 4. Open **Versions → Create version**. Under **Access scopes**, tick:
    - `read_products`
    - `read_inventory`
+   - `read_orders` (sales numbers for the Finance agent)
+   - `read_reports` (checkout numbers for the Finance agent)
 
-   Nothing else — the agent never changes your store. Click **Release**.
+   All read-only — the agent never changes your store. Click **Release**.
+   (Already installed? Add the two new scopes, release, and open the install link again to approve.)
 5. Go back to the app's home page and click **Install app** → choose your
    Skipper Packs store → **Install**.
 6. Open the app's **Settings**. Copy the **Client ID** and **Client secret**.
@@ -153,8 +156,10 @@ every 60 days and posting would silently stop).
    - `instagram_content_publish`
    - `instagram_manage_insights`
    - `business_management`
-   - `ads_read` and `ads_management` (Meta requires these for posting to Instagram from a business-managed
-     account — the agent never creates or changes ads)
+   - `ads_read` and `ads_management` (needed for Instagram posting, and so the agent team can read ad results
+     and make ad changes — only ever after your ✅ on Telegram)
+   - Then: **Business Settings → Accounts → Ad accounts → Skipper Packs → Assign people** → your system user →
+     tick **Manage campaigns** and **View performance**. (Only the Skipper Packs ad account is ever used.)
 5. **Generate** → copy the token (long text starting `EAA`). Shown once.
 6. Connect accounts → **Meta token** → paste → **Save & test**.
 

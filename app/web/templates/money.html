@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Money{% endblock %}
+{% block body %}
+<h1>💰 Money</h1>
+<p class="muted">What the Finance agent measured: Meta ads ({{ brand.name if brand else "" }} ad account only) and
+  Shopify sales. Updated every morning at 08:05{% if m %} · last {{ m.measured_at }}{% endif %}.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+<form method="post" action="{{ url_for('run_action', action='money') }}" class="actions">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('finance_page') }}">
+  <button type="submit" class="secondary" {% if any_running %}disabled{% endif %}>Refresh numbers now</button>
+  <span class="muted">Free — no AI used.</span>
+</form>
+
+{% if m %}
+{% for p in m.problems %}<div class="flash warn">⚠️ {{ p }}</div>{% endfor %}
+<section class="card">
+  <h2>Last 7 days <span class="muted">({{ m.ads.start }} – {{ m.ads.end }})</span></h2>
+  <div class="kpis">
+    {% set mm = m.metrics %}
+    <div class="kpi"><span class="muted">Blended ROAS</span><b>{{ mm.blended_roas or "—" }}</b><span class="muted">all sales ÷ ad spend</span></div>
+    <div class="kpi"><span class="muted">Meta ROAS</span><b>{{ m.ads.roas or "—" }}</b><span class="muted">week before: {{ m.ads_prev.roas or "—" }}</span></div>
+    <div class="kpi"><span class="muted">Ad spend</span><b>₹{{ "{:,.0f}".format(m.ads.spend) }}</b><span class="muted">this month ₹{{ "{:,.0f}".format(m.month_spend) }} of ₹{{ "{:,.0f}".format(guard.monthly_ad_budget) }}</span></div>
+    <div class="kpi"><span class="muted">Shopify sales</span><b>₹{{ "{:,.0f}".format(m.sales.revenue) }}</b><span class="muted">{{ m.sales.orders }} orders</span></div>
+    <div class="kpi"><span class="muted">Average order</span><b>{% if m.sales.aov %}₹{{ m.sales.aov|round|int }}{% else %}—{% endif %}</b></div>
+    <div class="kpi"><span class="muted">Cost per purchase</span><b>{% if m.ads.cpa %}₹{{ m.ads.cpa|round|int }}{% else %}—{% endif %}</b><span class="muted">{{ m.ads.purchases }} from ads</span></div>
+    <div class="kpi"><span class="muted">Link click rate</span><b>{{ m.ads.link_ctr or "—" }}%</b><span class="muted">₹{{ m.ads.cpc or "—" }} per click · ₹{{ m.ads.cpm or "—" }} per 1,000 views</span></div>
+    <div class="kpi"><span class="muted">Checkout completion</span><b>{{ mm.checkout_completion or "—" }}{% if mm.checkout_completion %}%{% endif %}</b>
+      {% if m.funnel %}<span class="muted">{{ m.funnel.checkout }} reached checkout, {{ m.funnel.paid }} paid (14 days)</span>{% endif %}</div>
+    <div class="kpi"><span class="muted">Refunds</span><b>{{ m.sales.refund_rate if m.sales.refund_rate is not none else "—" }}{% if m.sales.refund_rate is not none %}%{% endif %}</b></div>
+    <div class="kpi"><span class="muted">Cash on delivery</span><b>{{ m.sales.cod_share if m.sales.cod_share is not none else "—" }}{% if m.sales.cod_share is not none %}%{% endif %}</b></div>
+    <div class="kpi"><span class="muted">Repeat buyers</span><b>{{ m.sales.repeat_rate if m.sales.repeat_rate is not none else "—" }}{% if m.sales.repeat_rate is not none %}%{% endif %}</b></div>
+    <div class="kpi"><span class="muted">AI cost this month</span><b>≈ ₹{{ (m.ai_cost_usd_month * 88)|round|int }}</b><span class="muted">limit ₹{{ guard.ai_cost_monthly }}</span></div>
+  </div>
+  <p style="margin-top:12px">{% if m.break_even_roas %}<b>Break-even ROAS: {{ m.break_even_roas }}</b> — below this, ads lose money.
+    {% else %}Break-even ROAS: not known yet — add your product cost (and shipping, fees, COD returns) on the <a href="{{ url_for('goals_page') }}">Goals page</a>.{% endif %}</p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Day by day</h2>
+  {% set top = (ads_days|map(attribute="spend")|max) if ads_days else 0 %}
+  <div class="scroll"><table class="stats">
+    <tr><th>Day</th><th>Ad spend</th><th>Sales (Shopify)</th><th>Orders</th><th>ROAS</th><th style="width:30%"></th></tr>
+    {% for d in ads_days %}{% set s = sales_days.get(d.day) %}
+    <tr><td>{{ d.day[5:] }}</td><td>₹{{ "{:,.0f}".format(d.spend) }}</td><td>{% if s %}₹{{ "{:,.0f}".format(s.revenue) }}{% else %}—{% endif %}</td>
+      <td>{{ s.orders if s else "—" }}</td><td>{% if s and d.spend %}{{ "%.1f"|format(s.revenue / d.spend) }}{% else %}—{% endif %}</td>
+      <td><div class="progress" style="margin:0"><div style="width: {{ (100 * d.spend / top)|round|int if top else 0 }}%"></div></div></td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+
+{% if brief %}
+<section class="card"><div class="row-head"><h2>💰 Finance brief</h2><span class="muted">{{ brief.when }}</span></div>
+  <div class="md">{{ brief.body }}</div></section>
+{% endif %}
+{% endblock %}

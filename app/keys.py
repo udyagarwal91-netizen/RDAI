@@ -127,8 +127,10 @@ SERVICES: list[Service] = [
             '(looks like <code>admin.shopify.com/store/your-store</code>) into <b>Store address</b> below.',
             'Open the <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener">Shopify Dev '
             'Dashboard</a> with the same login → <b>Create app</b> → name it <code>Skipper Social Agent</code>.',
-            '<b>Versions → Create version</b> → under Access scopes tick only <code>read_products</code> and '
-            '<code>read_inventory</code> → <b>Release</b>.',
+            '<b>Versions → Create version</b> → under Access scopes tick <code>read_products</code>, '
+            '<code>read_inventory</code>, <code>read_orders</code> and <code>read_reports</code> (the last two let '
+            'the Finance agent read sales and checkout numbers; nothing can be changed in your store) → <b>Release</b>, '
+            'then open the install link again and approve.',
             'App home → <b>Install app</b> → pick your store → <b>Install</b>.',
             'App → <b>Settings</b> → copy <b>Client ID</b> and <b>Client secret</b> and paste them below.',
             'Already have an old token starting <code>shpat_</code>? Paste only that in the last box instead.',
@@ -154,8 +156,10 @@ SERVICES: list[Service] = [
             '<code>pages_manage_engagement</code>, <code>pages_read_user_engagement</code>, '
             '<code>read_insights</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code>, '
             '<code>instagram_manage_insights</code>, <code>business_management</code>, <code>ads_read</code>, '
-            '<code>ads_management</code> (Meta requires the last two for posting to Instagram from a business account; '
-            'the agent never runs ads).',
+            '<code>ads_management</code> (needed for Instagram posting, and so the team can read your ad results and make '
+            'ad changes — only ever after your ✅).',
+            'Still in Business Settings: <b>Accounts → Ad accounts</b> → your <b>Skipper Packs</b> ad account → '
+            '<b>Assign people</b> → your system user → tick <b>Manage campaigns</b> and <b>View performance</b>.',
             'Copy the token (starts with <code>EAA</code>) and paste it below. The test finds your Page and '
             'Instagram account by itself.',
         ],

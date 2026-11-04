@@ -67,6 +67,7 @@ def discover(brand: Brand) -> list[dict]:
                            fields="name,account_id,account_status,currency", limit="100")
     accounts = [{"id": a["account_id"], "name": a.get("name") or a["account_id"], "currency": a.get("currency"),
                  "active": a.get("account_status") == 1} for a in body.get("data", [])]
+    set_state(brand.slug, "meta:accounts", json.dumps(accounts))
     matches = [a for a in accounts if a["name"].strip().lower() == brand.name.strip().lower()]
     if len(matches) == 1 and not account_id(brand):
         set_account(brand, matches[0]["id"])

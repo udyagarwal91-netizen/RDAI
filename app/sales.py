@@ -129,7 +129,9 @@ def funnel(brand: Brand, days: int = 14) -> dict | None:
              f"sessions_that_completed_checkout SINCE -{days}d UNTIL yesterday")
     try:
         data = shopify.graphql(brand, "query Q($q: String!) { shopifyqlQuery(query: $q) { parseErrors "
-                                      "tableData { columns { name } rows } } }", {"q": query})["shopifyqlQuery"]
+                                      "tableData { columns { name } rows } } }", {"q": query}).get("shopifyqlQuery")
+        if not isinstance(data, dict):
+            raise shopify.ShopifyError("no report data returned")
     except shopify.ShopifyError as e:
         log.info("Checkout funnel not available from Shopify: %s", e)
         set_state(brand.slug, "sales:funnel_problem", "Shopify didn't share checkout numbers (needs read_reports).")

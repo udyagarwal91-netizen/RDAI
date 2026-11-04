@@ -97,6 +97,73 @@ def register(app, login_required, current_slug, load):
         return render_template("research.html", brand=brand, brand_error=brand_error, brief=brief,
                                competitors=team.competitors(brand) if brand else [])
 
+    # ---------- Money (Finance agent) ----------
+
+    @app.route("/money")
+    @login_required
+    def finance_page():
+        from app import jobs, meta_ads, sales, team
+        from app.team import finance
+        brand, brand_error = load(current_slug())
+        job_status = jobs.status(brand.slug) if brand else {}
+        latest_numbers = finance.latest_numbers(brand) if brand else None
+        g = goals.load(brand) if brand else None
+        return render_template("money.html", brand=brand, brand_error=brand_error, m=latest_numbers,
+                               ads_days=meta_ads.daily(brand, 14) if brand else [],
+                               sales_days={d["day"]: d for d in sales.daily(brand, 14)} if brand else {},
+                               brief=team.latest(brand, "finance", 30) if brand else None,
+                               guard=g["guardrails"] if g else {}, jobs=job_status,
+                               any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    # ---------- Ads (SMO + campaign plans + your approvals) ----------
+
+    @app.route("/ads", methods=["GET", "POST"])
+    @login_required
+    def campaigns_page():
+        from app import jobs, meta_ads, team
+        from app.team import proposals
+        brand, brand_error = load(current_slug())
+        if request.method == "POST" and brand:
+            try:
+                if request.form.get("find"):
+                    found = meta_ads.discover(brand)
+                    flash(f"Found {len(found)} ad account(s)." + (f" Using {meta_ads.account_id(brand)}."
+                                                                   if meta_ads.account_id(brand) else
+                                                                   " Pick yours below."), "ok")
+                else:
+                    meta_ads.set_account(brand, request.form.get("account", ""))
+                    flash("Ad account saved. Only this account will be used.", "ok")
+            except Exception as e:  # noqa: BLE001 — Meta's explanation is shown to the owner
+                flash(str(e), "error")
+            return redirect(url_for("campaigns_page"))
+        job_status = jobs.status(brand.slug) if brand else {}
+        from app.db import get_state
+        accounts = json.loads(get_state(brand.slug, "meta:accounts") or "[]") if brand else []
+        return render_template("ads.html", brand=brand, brand_error=brand_error,
+                               account=meta_ads.account_id(brand) if brand else None, accounts=accounts,
+                               structure=meta_ads.structure(brand) if brand else {"adsets": [], "ads": []},
+                               adsets={a["id"]: a for a in meta_ads.by(brand, "adset", 7)} if brand else {},
+                               ads7={a["id"]: a for a in meta_ads.by(brand, "ad", 7)} if brand else {},
+                               waiting=proposals.listing(brand, "proposed") if brand else [],
+                               history=[p for p in proposals.listing(brand, None, 30) if p["status"] != "proposed"]
+                               if brand else [],
+                               plan=team.latest(brand, "campaign_plan", 30) if brand else None,
+                               smo=team.latest(brand, "smo", 30) if brand else None, jobs=job_status,
+                               any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    @app.route("/ads/proposal/<int:pid>/<answer>", methods=["POST"])
+    @login_required
+    def ad_proposal(pid, answer):
+        from app import jobs
+        brand, _ = load(current_slug())
+        if not brand or answer not in ("yes", "no"):
+            abort(404)
+        if jobs.start(brand.slug, "ad_action", pid=pid, yes=(answer == "yes")):
+            flash("Working on it — the result appears here and on Telegram." if answer == "yes" else "OK.", "ok")
+        else:
+            flash("Another ad change is running. Try again in a minute.", "warn")
+        return redirect(url_for("campaigns_page"))
+
     # ---------- Phone access on home Wi-Fi ----------
 
     @app.route("/phone", methods=["POST"])

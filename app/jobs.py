@@ -250,9 +250,47 @@ def team_report(slug: str) -> str:
     return f"Weekly report sent (about US${r['cost_usd']:.2f})."
 
 
+def money(slug: str) -> str:
+    """Morning numbers: Meta ads + Shopify sales → goals, alerts, and pause proposals for clear losers."""
+    from app.team import finance, smo
+    brand = load_brand(slug)
+    m = finance.daily_tick(brand)
+    new = smo.daily_tick(brand) if m["ads"]["spend"] else []
+    roas = m["metrics"]["blended_roas"]
+    msg = (f"Numbers updated: ad spend ₹{m['ads']['spend']:,.0f}, sales ₹{m['sales']['revenue']:,.0f} in the last "
+           f"7 days" + (f", blended ROAS {roas}" if roas else "") + ".")
+    if m["alerts"]:
+        msg += f" {len(m['alerts'])} alert(s) sent to Telegram."
+    if new:
+        msg += f" {len(new)} ad change(s) proposed."
+    if m["problems"]:
+        msg += " Couldn't read: " + " | ".join(m["problems"])
+    return msg
+
+
+def ad_action(slug: str, pid: int, yes: bool = True) -> str:
+    """Carry out (or decline) one ad change you answered, and tell you the result on Telegram."""
+    from app.team import ad_actions
+    brand = load_brand(slug)
+    result = ad_actions.decide(brand, pid, yes)
+    _tell(brand, telegram.esc(result))
+    return result
+
+
+def money_tick(slug: str) -> None:
+    """Every morning, quietly (alerts only)."""
+    try:
+        brand = load_brand(slug)
+        if brand.secret("META_ACCESS_TOKEN") or brand.secret("SHOPIFY_ADMIN_TOKEN") or brand.secret("SHOPIFY_CLIENT_ID"):
+            start(slug, "money")
+    except Exception:
+        log.exception("Morning numbers failed")
+
+
 ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
            "drafts": drafts, "image": image, "reel": reel, "regen": regen, "pause": pause, "resume": resume, "stats": stats,
-           "team_week": team_week, "research": research, "direction": direction, "team_report": team_report}
+           "team_week": team_week, "research": research, "direction": direction, "team_report": team_report,
+           "money": money, "ad_action": ad_action}
 
 
 # ---------------------------------------------------------------- background running
@@ -344,6 +382,8 @@ def reload_schedule() -> None:
         # Monday 09:30: the Manager's one-page report (goals, wins, problems, what's needed from you).
         _scheduler.add_job(start, CronTrigger(day_of_week="mon", hour=9, minute=30, timezone=tz),
                            args=[slug, "team_report"], id=f"{slug}:team_report")
+        # Every morning 08:05: ad + sales numbers, goal lights, alerts, pause proposals for clear losers.
+        _scheduler.add_job(money_tick, CronTrigger(hour=8, minute=5, timezone=tz), args=[slug], id=f"{slug}:money")
         # Every minute: post anything that's due.
         _scheduler.add_job(publish_tick, IntervalTrigger(minutes=1), args=[slug], id=f"{slug}:publish",
                            max_instances=1, coalesce=True)

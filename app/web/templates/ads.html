@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Ads{% endblock %}
+{% block body %}
+<h1>📈 Ads</h1>
+<p class="muted">Your Meta ads, what the team thinks of them, and changes waiting for your OK. Nothing is changed
+  without your ✅; new ad sets are created paused and need a second ✅ to start spending.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+
+{% if waiting %}
+<section class="card">
+  <h2>Waiting for your OK</h2>
+  {% for p in waiting %}
+  <div class="feed-item">
+    <b>{{ p.summary }}</b> <span class="muted">· {{ p.by }}</span>
+    <div class="muted">Why: {{ p.reason }} · Expect: {{ p.expected }}</div>
+    <div class="actions" style="margin-top:8px">
+      <form method="post" action="{{ url_for('ad_proposal', pid=p.id, answer='yes') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button type="submit" {% if any_running %}disabled{% endif %}>✅ Approve</button></form>
+      <form method="post" action="{{ url_for('ad_proposal', pid=p.id, answer='no') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button type="submit" class="secondary">❌ No</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Ad account</h2>
+  {% if account %}<p>Using <b>{{ account }}</b> only. Every other ad account is ignored.</p>{% endif %}
+  <form method="post" action="{{ url_for('campaigns_page') }}" class="actions">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button type="submit" name="find" value="1" class="secondary">Find my ad accounts</button>
+  </form>
+  {% if accounts %}
+  <form method="post" action="{{ url_for('campaigns_page') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {% for a in accounts %}<label style="font-weight:400"><input type="radio" name="account" value="{{ a.id }}" {% if account == "act_" ~ a.id %}checked{% endif %}>
+      {{ a.name }} ({{ a.id }}, {{ a.currency }}{% if not a.active %}, not active{% endif %})</label>{% endfor %}
+    <div class="actions"><button type="submit">Use this account</button></div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Ad sets <span class="muted">(last 7 days vs the 7 before)</span></h2>
+  <div class="scroll"><table class="stats">
+    <tr><th>Ad set</th><th>Status</th><th>Budget/day</th><th>Spend</th><th>ROAS</th><th>Cost/purchase</th><th>CTR</th></tr>
+    {% for a in structure.adsets %}{% set r = adsets.get(a.id) %}
+    <tr><td>{{ a.name }}<div class="muted">{{ a.campaign }}</div></td><td>{{ a.status|lower }}</td>
+      <td>{% if a.daily_budget %}₹{{ a.daily_budget|round|int }}{% else %}—{% endif %}</td>
+      <td>{% if r %}₹{{ r.spend|round|int }}{% else %}—{% endif %}</td>
+      <td>{{ r.roas if r and r.roas else "—" }}{% if r and r.prev.roas %} <span class="muted">({{ r.prev.roas }})</span>{% endif %}</td>
+      <td>{% if r and r.cpa %}₹{{ r.cpa|round|int }}{% else %}—{% endif %}</td>
+      <td>{{ r.link_ctr if r and r.link_ctr else "—" }}{% if r and r.prev.link_ctr %} <span class="muted">({{ r.prev.link_ctr }})</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="7" class="muted">No ad data yet — press Refresh numbers on the Money page.</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+{% if plan %}<section class="card"><div class="row-head"><h2>🗺 Campaign plan</h2><span class="muted">{{ plan.when }}</span></div><div class="md">{{ plan.body }}</div></section>{% endif %}
+{% if smo %}<section class="card"><div class="row-head"><h2>📈 SMO brief</h2><span class="muted">{{ smo.when }}</span></div><div class="md">{{ smo.body }}</div></section>{% endif %}
+
+{% if history %}
+<section class="card">
+  <h2>Past ad changes</h2>
+  {% for p in history %}
+  <div class="feed-item">{{ {"done": "✅", "failed": "⚠️", "rejected": "❌", "expired": "⌛"}.get(p.status, "") }} {{ p.summary }}
+    <span class="muted">· {{ p.status }}{% if p.result %} · {{ p.result }}{% endif %}</span></div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

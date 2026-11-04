@@ -10,7 +10,7 @@ import logging
 import requests
 
 from app import brand_editor, secrets_store, shopify
-from app.brands import Brand
+from app.brands import Brand, load_brand
 
 log = logging.getLogger(__name__)
 TIMEOUT = 20
@@ -90,8 +90,8 @@ def test_shopify(brand: Brand) -> tuple[bool, str]:
         return False, f"Shopify replied with error {r.status_code}."
     payload = r.json()
     if payload.get("errors"):
-        return False, ("Connected, but the app is missing permissions. In the Dev Dashboard, add the read_products "
-                       "and read_inventory scopes, release a new version, and reinstall.")
+        return False, ("Connected, but the app is missing permissions. In the Dev Dashboard, add the read_products, "
+                       "read_inventory, read_orders and read_reports scopes, release a new version, and reinstall.")
     shop = payload["data"]["shop"]["name"]
     count = payload["data"].get("productsCount", {}).get("count", "?")
     return True, f"Connected to '{shop}' — {count} products found."
@@ -145,7 +145,17 @@ def test_meta(brand: Brand) -> tuple[bool, str]:
     if missing:
         return False, (f"Connected to Page '{page.get('name')}' and its Instagram account, but the token is missing: "
                        f"{', '.join(missing)}. Generate a new token with these ticked (step 5) and paste it again.")
-    return True, f"Connected to Facebook Page '{page.get('name')}' and its Instagram account, with posting permissions."
+    ads_note = ""
+    try:  # find the brand's own ad account (only one whose name matches the brand is ever used)
+        from app import meta_ads
+        meta_ads.discover(load_brand(brand.slug))
+        act = meta_ads.account_id(brand)
+        ads_note = f" Ad account {act} will be used for ad results." if act else \
+            " No ad account named like the brand was found — pick it on the Ads page."
+    except Exception as e:  # noqa: BLE001 — posting works without ads; explain and carry on
+        log.info("Ad accounts not readable: %s", e)
+    return True, (f"Connected to Facebook Page '{page.get('name')}' and its Instagram account, with posting "
+                  f"permissions.{ads_note}")
 
 
 REQUIRED_META_PERMISSIONS = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "instagram_basic",
