@@ -570,7 +570,9 @@ def _dashboard(brand) -> dict:
     from app import goals
     from app.web.hq import lan_address, on_host
     port = int(os.environ.get("PORT", 8000))
+    from app import team
     return {"goal_progress": goals.progress(brand) if brand else [],
+            "team_news": team.briefs(brand, 4) if brand else [],
             "lan_on": os.environ.get("LAN_ACCESS") == "1", "lan_url": lan_address(port), "on_host": on_host()}
 
 

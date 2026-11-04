@@ -56,6 +56,47 @@ def register(app, login_required, current_slug, load):
                                guard_labels=goals.GUARDRAILS, biz_labels=goals.BUSINESS,
                                milestones=goals.MILESTONES)
 
+    # ---------- Team room ----------
+
+    @app.route("/team")
+    @login_required
+    def team_page():
+        from app import jobs, team
+        brand, brand_error = load(current_slug())
+        job_status = jobs.status(brand.slug) if brand else {}
+        return render_template("team.html", brand=brand, brand_error=brand_error, agents=team.AGENTS,
+                               briefs=team.briefs(brand, 25) if brand else [],
+                               decisions=team.decisions(brand, 20) if brand else [],
+                               skills={a: team.skill(brand, a) for a in team.AGENTS} if brand else {},
+                               custom={a: team.is_custom(brand, a) for a in team.AGENTS} if brand else {},
+                               jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    @app.route("/team/skill/<agent>", methods=["POST"])
+    @login_required
+    def team_skill(agent):
+        from app import team
+        brand, _ = load(current_slug())
+        if not brand or agent not in team.AGENTS:
+            abort(404)
+        reset = request.form.get("reset") == "1"
+        team.save_skill(brand, agent, "" if reset else request.form.get("text", ""))
+        log.info("Control Center: %s playbook %s", agent, "reset" if reset else "edited")
+        flash(f"{team.AGENTS[agent]['name']}'s playbook " + ("reset to the default." if reset else "saved."), "ok")
+        return redirect(url_for("team_page") + "#skills")
+
+    @app.route("/research", methods=["GET", "POST"])
+    @login_required
+    def research_page():
+        from app import team
+        brand, brand_error = load(current_slug())
+        if request.method == "POST" and brand:
+            handles = team.set_competitors(brand, request.form.get("competitors", ""))
+            flash(f"Saved {len(handles)} competitor account(s). The Researcher reads them every week.", "ok")
+            return redirect(url_for("research_page"))
+        brief = team.latest(brand, "market", max_age_days=365) if brand else None
+        return render_template("research.html", brand=brand, brand_error=brand_error, brief=brief,
+                               competitors=team.competitors(brand) if brand else [])
+
     # ---------- Phone access on home Wi-Fi ----------
 
     @app.route("/phone", methods=["POST"])

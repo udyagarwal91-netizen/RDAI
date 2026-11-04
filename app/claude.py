@@ -45,6 +45,35 @@ def chat(client, system: str, messages: list, tools: list, effort: str = "medium
                    output_config={"effort": effort})
 
 
+WEB_SEARCH_USD = 0.01  # US$10 per 1,000 searches (Anthropic price list)
+
+
+def research(client, system: str, prompt: str, max_searches: int = 8, effort: str = "medium",
+             allowed_domains: list[str] | None = None) -> tuple[str, float, int]:
+    """Let Claude search the web and write findings in plain text with sources.
+    Returns (text, cost in US$, number of searches). Used by the Market Researcher."""
+    tool = {"type": "web_search_20260209", "name": "web_search", "max_uses": max_searches,
+            "user_location": {"type": "approximate", "country": "IN", "timezone": "Asia/Kolkata"}}
+    if allowed_domains:
+        tool["allowed_domains"] = allowed_domains
+    messages = [{"role": "user", "content": prompt}]
+    total, searches = 0.0, 0
+    for _ in range(4):  # the search loop can pause; resume it a few times at most
+        response = _create(client, system=system, max_tokens=16000, messages=messages, tools=[tool],
+                           output_config={"effort": effort})
+        total += cost(response.usage)
+        used = getattr(getattr(response.usage, "server_tool_use", None), "web_search_requests", 0) or 0
+        searches += used
+        total += used * WEB_SEARCH_USD
+        if response.stop_reason != "pause_turn":
+            break
+        messages = [{"role": "user", "content": prompt}, {"role": "assistant", "content": response.content}]
+    text = "\n".join(b.text for b in response.content if b.type == "text").strip()
+    if not text:
+        raise ClaudeError("The web research came back empty. Try again later.")
+    return text, total, searches
+
+
 def _create(client, system: str, **kwargs):
     try:
         response = client.beta.messages.create(

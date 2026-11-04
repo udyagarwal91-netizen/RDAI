@@ -73,6 +73,14 @@ TOOLS = [
           {"instruction": {"type": "string"}}, ["instruction"]),
 ]
 
+TOOLS += [
+    _tool("team_briefs", "The agent team's latest briefs (market research, Manager's direction, finance, SMO, "
+          "campaign plans) and open decisions. Use for 'what did the team decide', 'what's trending', 'how is ROAS'."),
+    _tool("run_team_meeting", "Start the full weekly team meeting now (research → Manager's direction → new plan → "
+          "review → ad plan). 3–6 minutes, about ₹40–80. Replaces posts that are only planned."),
+    _tool("run_research", "Start fresh market research now (competitors, trends, dates). 2–4 minutes, about ₹15–30."),
+]
+
 NEEDS_CONFIRMATION = {"approve_draft", "reject_draft", "post_now", "cancel_post", "resume_posting",
                       "remember_instruction"}
 
@@ -194,6 +202,20 @@ def run_tool(brand: Brand, name: str, args: dict) -> str:
         except Exception as e:  # noqa: BLE001 — explain to Claude, it will tell the owner
             return f"Couldn't add it: {e}"
         return f"Added {args['name']} on {args['date']}. The next plan will use it."
+    if name == "team_briefs":
+        from app import team
+        found = team.briefs(brand, 6)
+        open_d = [d for d in team.decisions(brand, 10) if d["status"] == "open"]
+        return _json({"briefs": [{"by": b["agent_name"], "when": b["when"], "title": b["title"],
+                                  "text": b["body"][:1500]} for b in found],
+                      "open_decisions": [f"{d['decision']} (check {d['check_on']})" for d in open_d]}) \
+            if found else "The team hasn't written any briefs yet."
+    if name == "run_team_meeting":
+        return "Team meeting started; results arrive on Telegram in 3–6 minutes." if _start(brand, "team_week") \
+            else "A team meeting is already running."
+    if name == "run_research":
+        return "Market research started; the brief arrives in 2–4 minutes." if _start(brand, "research") \
+            else "Research is already running."
     return f"Unknown tool {name}."
 
 

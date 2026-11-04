@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Team{% endblock %}
+{% block body %}
+<h1>Your agent team</h1>
+<p class="muted">Six specialists that write briefs to each other and decide together. The Manager decides content
+  direction; anything that spends money waits for your ✅. Every week at your plan time they hold a team meeting.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+
+<section class="card">
+  <h2>Run now</h2>
+  <div class="grid">
+    {% for key, title, what in [("team_week", "Full team meeting", "Research → results → Manager's direction → plan → review → ad plan. 3–6 minutes, about ₹40–80."),
+                                ("research", "Market research", "Competitors, trends, dates and customer words. 2–4 minutes, about ₹15–30."),
+                                ("direction", "Ask the Manager", "This week's direction from the latest briefs. About ₹10."),
+                                ("team_report", "Weekly report", "The Manager's one-page report on Telegram. About ₹5.")] %}
+    <div class="tile"><b>{{ title }}</b><span class="muted">{{ what }}</span>
+      <form method="post" action="{{ url_for('run_action', action=key) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ url_for('team_page') }}">
+        <button type="submit" class="secondary" {% if any_running %}disabled{% endif %}>Start</button></form></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>Team room</h2>
+  {% for b in briefs %}
+  <div class="feed-item">
+    <div class="row-head"><div><span class="agent-tag">{{ b.icon }} {{ b.agent_name }}</span> · <b>{{ b.title }}</b></div>
+      <span class="muted">{{ b.when }}{% if b.cost_usd %} · ≈ ₹{{ (b.cost_usd * 88)|round|int }}{% endif %}</span></div>
+    <details><summary>Read</summary><div class="md">{{ b.body }}</div></details>
+  </div>
+  {% else %}
+  <p class="muted">No briefs yet. Press <b>Full team meeting</b>, or wait for the weekly meeting.</p>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h2>Decision log</h2>
+  <p class="muted">Every decision is re-checked on its date: ✅ worked · ❌ didn't · ❔ unclear · ⏳ waiting.</p>
+  {% for d in decisions %}
+  <div class="feed-item"><b>{{ {"worked": "✅", "did_not_work": "❌", "unclear": "❔"}.get(d.status, "⏳") }} {{ d.decision }}</b>
+    <div class="muted">Why: {{ d.reason }} · Expect: {{ d.expected }} · Check on {{ d.check_on }}</div>
+    {% if d.outcome %}<div>Result: {{ d.outcome }}</div>{% endif %}</div>
+  {% else %}<p class="muted">No decisions yet.</p>{% endfor %}
+</section>
+
+<section class="card" id="skills">
+  <h2>Skill playbooks</h2>
+  <p class="muted">What each agent knows and follows. Edit any of them in plain English — your version is used from
+    the next run. Empty the box and save (or press Reset) to go back to the default.</p>
+  {% for key, a in agents.items() %}
+  <details><summary>{{ a.icon }} {{ a.name }}{% if custom[key] %} (your version){% endif %}</summary>
+    <p class="muted">{{ a.role }}</p>
+    <form method="post" action="{{ url_for('team_skill', agent=key) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <textarea class="big" name="text">{{ skills[key] }}</textarea>
+      <div class="actions"><button type="submit">Save playbook</button>
+        {% if custom[key] %}<button type="submit" name="reset" value="1" class="link">Reset to default</button>{% endif %}</div>
+    </form>
+  </details>
+  {% endfor %}
+</section>
+{% endblock %}

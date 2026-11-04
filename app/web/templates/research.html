@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Research{% endblock %}
+{% block body %}
+<h1>Market research</h1>
+<p class="muted">What the 🔎 Market Researcher found. Competitor numbers come from Instagram's official data for
+  public business accounts (likes and comments only — nobody's reach is public). Patterns are learned, never copied.</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+<section class="card">
+  <h2>Competitors to watch</h2>
+  <form method="post" action="{{ url_for('research_page') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Instagram handles, one per line or separated by commas (up to 15)
+      <span class="muted">— must be business or creator accounts; e.g. xyxx_crew, damensch</span>
+      <textarea name="competitors" placeholder="@brand_one&#10;@brand_two">{{ competitors|join("\n") }}</textarea></label>
+    <div class="actions"><button type="submit">Save competitors</button></div>
+  </form>
+</section>
+
+{% if brief %}
+<section class="card">
+  <div class="row-head"><h2>Latest market brief</h2><span class="muted">{{ brief.when }}</span></div>
+  <div class="md">{{ brief.body }}</div>
+</section>
+{% if brief.data.competitors %}
+<section class="card">
+  <h2>Competitor snapshot</h2>
+  <div class="scroll"><table class="stats">
+    <tr><th>Account</th><th>Followers</th><th>Posts/week</th><th>Avg engagement</th><th>Reels</th><th>Carousels</th><th>Images</th></tr>
+    {% for c in brief.data.competitors %}
+    <tr><td>@{{ c.handle }}</td><td>{{ c.followers or "—" }}</td><td>{{ c.posts_per_week or "—" }}</td><td>{{ c.avg_engagement }}</td>
+      <td>{{ c.formats.reel }}</td><td>{{ c.formats.carousel }}</td><td>{{ c.formats.image }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% for c in brief.data.competitors %}{% for p in c.top_posts[:2] %}
+    <div class="feed-item">@{{ c.handle }} · {{ p.type }} · {{ p.likes }} likes · {{ p.vs_avg }}× their average ·
+      <a href="{{ p.url }}" target="_blank" rel="noopener">open</a><div class="muted">{{ p.caption[:160] }}</div></div>
+  {% endfor %}{% endfor %}
+</section>
+{% endif %}
+{% else %}
+<section class="card"><p>No market brief yet. Go to <a href="{{ url_for('team_page') }}">Team</a> and press <b>Market research</b>.</p></section>
+{% endif %}
+{% endblock %}

@@ -110,7 +110,87 @@ CREATE TABLE IF NOT EXISTS app_state (
     PRIMARY KEY (brand, key)
 );
 
+-- The agent team's written briefs (market research, weekly direction, finance, SMO, campaign plans…)
+CREATE TABLE IF NOT EXISTS team_briefs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand           TEXT NOT NULL,
+    agent           TEXT NOT NULL,            -- researcher / planner / creator / smo / finance / manager
+    kind            TEXT NOT NULL,            -- market / direction / plan_review / finance / smo / campaign_plan
+    title           TEXT NOT NULL,
+    body            TEXT,                     -- plain-English text shown to the owner
+    data            TEXT,                     -- JSON with the structured details
+    cost_usd        REAL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+
+-- Decisions the Manager makes, re-checked later so the team learns whether they worked
+CREATE TABLE IF NOT EXISTS team_decisions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand           TEXT NOT NULL,
+    brief_id        INTEGER,
+    decision        TEXT NOT NULL,
+    reason          TEXT,
+    expected        TEXT,                     -- what should happen if it's right
+    check_on        TEXT,                     -- date to review it (YYYY-MM-DD)
+    status          TEXT DEFAULT 'open',      -- open / worked / did_not_work / unclear
+    outcome         TEXT,
+    created_at      TEXT NOT NULL
+);
+
+-- Changes to Meta ads proposed by the team. Nothing runs until the owner approves it.
+CREATE TABLE IF NOT EXISTS ad_proposals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand           TEXT NOT NULL,
+    agent           TEXT NOT NULL,
+    action          TEXT NOT NULL,            -- pause / activate / budget / retarget / boost
+    target_id       TEXT,                     -- Meta ad set / ad / campaign id, or Instagram post id
+    target_name     TEXT,
+    params          TEXT,                     -- JSON
+    reason          TEXT,
+    expected        TEXT,
+    status          TEXT DEFAULT 'proposed',  -- proposed / approved / done / failed / rejected / expired
+    result          TEXT,
+    created_at      TEXT NOT NULL,
+    decided_at      TEXT
+);
+
+-- Meta ads results per ad per day (Skipper Packs ad account only)
+CREATE TABLE IF NOT EXISTS ads_daily (
+    brand           TEXT NOT NULL,
+    day             TEXT NOT NULL,            -- YYYY-MM-DD
+    ad_id           TEXT NOT NULL,
+    ad_name         TEXT,
+    adset_id        TEXT,
+    adset_name      TEXT,
+    campaign_id     TEXT,
+    campaign_name   TEXT,
+    spend           REAL,
+    impressions     INTEGER,
+    reach           INTEGER,
+    frequency       REAL,
+    link_clicks     INTEGER,
+    add_to_cart     INTEGER,
+    checkouts       INTEGER,
+    purchases       INTEGER,
+    purchase_value  REAL,
+    PRIMARY KEY (brand, day, ad_id)
+);
+
+-- Shopify sales per day (for blended ROAS, order value, refunds, COD share, repeat buyers)
+CREATE TABLE IF NOT EXISTS sales_daily (
+    brand           TEXT NOT NULL,
+    day             TEXT NOT NULL,
+    orders          INTEGER,
+    revenue         REAL,
+    refunds         REAL,
+    cod_orders      INTEGER,
+    repeat_orders   INTEGER,
+    cancelled       INTEGER,
+    PRIMARY KEY (brand, day)
+);
+
 CREATE INDEX IF NOT EXISTS idx_posts_due ON posts(status, scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_briefs ON team_briefs(brand, kind, id);
 CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(brand, status);
 """
 

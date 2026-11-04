@@ -38,7 +38,8 @@ def sync(slug: str) -> str:
     return msg
 
 
-def plan(slug: str, note: str = "") -> str:
+def prepare_for_planning(slug: str) -> None:
+    """Fresh prices/stock from Shopify and fresh post results from Meta before any plan."""
     brand = load_brand(slug)
     last = json.loads(get_state(slug, "last_sync") or "{}")
     if not last or datetime.fromisoformat(last["at"]) < datetime.now(timezone.utc) - timedelta(hours=6):
@@ -49,6 +50,11 @@ def plan(slug: str, note: str = "") -> str:
             insights.make_lessons(brand)
         except (publisher.PublishError, claude.ClaudeError) as e:
             log.warning("Couldn't refresh results before planning: %s", e)
+
+
+def plan(slug: str, note: str = "") -> str:
+    brand = load_brand(slug)
+    prepare_for_planning(slug)
     result = planner.make_plan(brand, note=note)
     rows = planner.upcoming_plan(brand)
     try:
@@ -79,7 +85,7 @@ def update(slug: str) -> str:
 
 FRIENDLY_ERRORS = (shopify.ShopifyError, planner.PlanError, telegram.TelegramError, BrandConfigError,
                    updater.UpdateError, producer.DraftError, gemini.GeminiError, claude.ClaudeError,
-                   renderer.RenderError, video.VideoError)
+                   renderer.RenderError, video.VideoError, publisher.PublishError)
 
 
 def drafts(slug: str, days: int = 7) -> str:
@@ -216,8 +222,37 @@ def publish_tick(slug: str) -> None:
         log.exception("Posting check failed")
 
 
+def team_week(slug: str) -> str:
+    """The weekly team meeting: research → results → manager's direction → plan → review → campaign plan."""
+    from app.team import meeting
+    return meeting.run(slug)
+
+
+def research(slug: str) -> str:
+    from app.team import researcher
+    brand = load_brand(slug)
+    r = researcher.run(brand)
+    researcher.tell_owner(brand, r)
+    return f"Market brief written: {r['data']['headline']} (about US${r['cost_usd']:.2f})."
+
+
+def direction(slug: str) -> str:
+    from app.team import manager
+    brand = load_brand(slug)
+    d = manager.direct(brand)
+    manager.tell_owner(brand, d)
+    return f"Manager's direction: {d['data']['headline']} (about US${d['cost_usd']:.2f})."
+
+
+def team_report(slug: str) -> str:
+    from app.team import manager
+    r = manager.weekly_report(load_brand(slug))
+    return f"Weekly report sent (about US${r['cost_usd']:.2f})."
+
+
 ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
-           "drafts": drafts, "image": image, "reel": reel, "regen": regen, "pause": pause, "resume": resume, "stats": stats}
+           "drafts": drafts, "image": image, "reel": reel, "regen": regen, "pause": pause, "resume": resume, "stats": stats,
+           "team_week": team_week, "research": research, "direction": direction, "team_report": team_report}
 
 
 # ---------------------------------------------------------------- background running
@@ -293,8 +328,9 @@ def reload_schedule() -> None:
             continue
         tz = sched.get("timezone", "Asia/Kolkata")
         hh, mm = map(int, str(sched.get("plan_time", "10:00")).split(":"))
+        # The weekly plan is made by the whole team (research → manager → planner → review).
         _scheduler.add_job(start, CronTrigger(day_of_week=sched.get("plan_day", "sun"), hour=hh, minute=mm,
-                                              timezone=tz), args=[slug, "plan"], id=f"{slug}:plan")
+                                              timezone=tz), args=[slug, "team_week"], id=f"{slug}:plan")
         _scheduler.add_job(start, CronTrigger(hour=6, minute=15, timezone=tz), args=[slug, "sync"],
                            id=f"{slug}:sync")
         # Every morning, prepare drafts for posts due in the next 2 days, so you have time to approve.
@@ -305,6 +341,9 @@ def reload_schedule() -> None:
                            id=f"{slug}:collect")
         _scheduler.add_job(start, CronTrigger(day_of_week="mon", hour=9, minute=5, timezone=tz), args=[slug, "stats"],
                            id=f"{slug}:stats")
+        # Monday 09:30: the Manager's one-page report (goals, wins, problems, what's needed from you).
+        _scheduler.add_job(start, CronTrigger(day_of_week="mon", hour=9, minute=30, timezone=tz),
+                           args=[slug, "team_report"], id=f"{slug}:team_report")
         # Every minute: post anything that's due.
         _scheduler.add_job(publish_tick, IntervalTrigger(minutes=1), args=[slug], id=f"{slug}:publish",
                            max_instances=1, coalesce=True)
