@@ -14,6 +14,11 @@ on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval �
 → 5 extras. The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
 (deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week, AI images may mix
 product-only / dressed-model / website-style model shots (owner chose a mix; brand form can restrict).
+Meta ads: use ONLY the "Skipper Packs" ad account (act_1840946140217408, business "Skipper Packs"); ignore every
+other account the token can see (skipper.india "Skippers India", Dolphin Digital "Skippers", "Skipper Brands" ones).
+Baseline 15 Oct–3 Nov 2026 from that account + Shopify: ad spend ₹10.5k (~₹500/day, one prospecting ad set), purchase
+ROAS 5.6, blended ROAS ~5.9, CPA ₹60, link CTR 4.9%, AOV ~₹300, checkout completion 30%, 88% of orders from FB/IG.
+Owner's goal: ROAS 10 (planned via AOV ₹400 + checkout completion 40%). Planned next: 6-agent team + Agent HQ web app.
 Veo 3.1 preview models shut down 2026-10-22; reels use `gemini-omni-1.1-flash` (~US$0.10/s at 720p).
 
 ## Commands
