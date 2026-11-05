@@ -21,19 +21,30 @@ log = logging.getLogger(__name__)
 STEP_ERRORS = (claude.ClaudeError, publisher.PublishError, shopify.ShopifyError, telegram.TelegramError)
 
 
+def _skip(step: str, e: Exception) -> str:
+    """Note a skipped step. Expected problems are explained; anything else is logged in full for fixing."""
+    if isinstance(e, STEP_ERRORS):
+        return f"{step} skipped ({e})"
+    log.exception("Team meeting: %s failed", step)
+    return f"{step} skipped (unexpected problem: {type(e).__name__} — details on the Activity page)"
+
+
 def run(slug: str) -> str:
     from app import jobs
     brand = load_brand(slug)
     notes, cost = [], 0.0
-    jobs.prepare_for_planning(slug)
+    try:
+        jobs.prepare_for_planning(slug)
+    except Exception as e:  # noqa: BLE001 — plan with what we have
+        notes.append(_skip("refreshing products and results", e))
 
     try:
         r = researcher.run(brand)
         cost += r["cost_usd"]
         researcher.tell_owner(brand, r)
         notes.append("market brief written")
-    except STEP_ERRORS as e:
-        notes.append(f"market research skipped ({e})")
+    except Exception as e:  # noqa: BLE001 — one agent's problem never stops the meeting
+        notes.append(_skip("market research", e))
 
     for name in ("smo", "finance"):
         try:
@@ -45,8 +56,8 @@ def run(slug: str) -> str:
             if b:
                 cost += b["cost_usd"]
                 notes.append(f"{name} brief written")
-        except STEP_ERRORS as e:
-            notes.append(f"{name} brief skipped ({e})")
+        except Exception as e:  # noqa: BLE001
+            notes.append(_skip(f"{name} brief", e))
 
     direction_note = ""
     try:
@@ -55,8 +66,8 @@ def run(slug: str) -> str:
         direction_note = d["data"]["plan_instructions"]
         manager.tell_owner(brand, d)
         notes.append("direction set")
-    except claude.ClaudeError as e:
-        notes.append(f"manager skipped ({e})")
+    except Exception as e:  # noqa: BLE001
+        notes.append(_skip("manager", e))
 
     result = planner.make_plan(brand, note=direction_note)
     cost += result["cost_usd"]
@@ -72,8 +83,8 @@ def run(slug: str) -> str:
             notes.append("plan revised after the Researcher's review")
         else:
             notes.append("plan approved by the Researcher")
-    except claude.ClaudeError as e:
-        notes.append(f"plan review skipped ({e})")
+    except Exception as e:  # noqa: BLE001
+        notes.append(_skip("plan review", e))
 
     try:
         from app.team import campaigns
@@ -83,8 +94,8 @@ def run(slug: str) -> str:
             notes.append("ad campaign plan proposed")
     except ImportError:
         pass
-    except STEP_ERRORS as e:
-        notes.append(f"campaign plan skipped ({e})")
+    except Exception as e:  # noqa: BLE001
+        notes.append(_skip("campaign plan", e))
 
     try:
         telegram.send_message(brand, telegram.format_plan(brand, result["summary"], rows, None))

@@ -32,7 +32,7 @@ SCHEMA = {
                                                    "youtube_shorts", "google_remarketing", "email"]},
             "idea": {"type": "string"}, "when": {"type": "string", "enum": ["now", "later"]}},
             "required": ["channel", "idea", "when"], "additionalProperties": False}},
-        "proposals": {"type": "array", "maxItems": 4, "items": {"type": "object", "properties": {
+        "proposals": {"type": "array", "items": {"type": "object", "properties": {
             "action": {"type": "string", "enum": ["retarget", "boost", "budget", "pause", "activate"]},
             "target_id": {"type": "string", "description": "Ad set / ad id for budget, pause, activate; the "
                                                            "Instagram media id for boost; the ad id whose creative "
@@ -89,6 +89,7 @@ def plan(brand: Brand, client=None) -> dict | None:
             layer["daily_budget"] = round(layer["daily_budget"] * cap / total)
     ids = {a["id"]: a for a in known["adsets"]} | {a["id"]: a for a in known["ads"]}
     made, refused = [], []
+    data["proposals"] = data["proposals"][:4]
     for p in data["proposals"]:
         action, target = p["action"], p["target_id"].strip()
         if action in ("budget", "pause", "activate") and target not in ids:

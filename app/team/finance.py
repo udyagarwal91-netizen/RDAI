@@ -149,7 +149,7 @@ BRIEF_SCHEMA = {
     "properties": {"headline": {"type": "string"},
                    "what_the_numbers_say": {"type": "array", "items": {"type": "string"}},
                    "biggest_lever": {"type": "string", "description": "What holds ROAS back most, with numbers."},
-                   "actions": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
+                   "actions": {"type": "array", "items": {"type": "string"}},
                    "budget_note": {"type": "string"}},
     "required": ["headline", "what_the_numbers_say", "biggest_lever", "actions", "budget_note"],
     "additionalProperties": False,
@@ -167,6 +167,7 @@ def weekly_brief(brand: Brand, client=None) -> dict | None:
     user = (f"Write this week's money brief for the Manager. Use only these numbers (₹; 'ads_prev' is the week "
             f"before):\n{numbers}\n\nGOALS AND LIMITS:\n{goals.summary_for_agents(brand)}")
     data, cost, _ = claude.ask(client, system, [{"role": "user", "content": user}], BRIEF_SCHEMA, effort="medium")
+    data["actions"] = data["actions"][:3]
     body = "\n".join([data["headline"], "", *[f"- {x}" for x in data["what_the_numbers_say"]], "",
                       f"Biggest lever: {data['biggest_lever']}", "", "Actions:",
                       *[f"- {x}" for x in data["actions"]], "", f"Budget: {data['budget_note']}",

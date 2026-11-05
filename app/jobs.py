@@ -319,7 +319,10 @@ def _run(slug: str, action: str, **kwargs) -> None:
         _set(slug, action, "failed", str(e))
         log.warning("Failed: %s — %s", action, e)
     except Exception as e:
-        _set(slug, action, "failed", "Something unexpected went wrong. The details are on the Activity page.")
+        from app import secrets_store
+        _set(slug, action, "failed", secrets_store.scrub(
+            f"Something unexpected went wrong ({type(e).__name__}: {str(e)[:200]}). The full details are on the "
+            "Activity page."))
         log.exception("Failed: %s — %s", action, e)
     finally:
         with _lock:

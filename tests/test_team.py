@@ -177,3 +177,20 @@ def test_chat_can_read_team_briefs(crew):
     assert "hasn't written" in assistant.run_tool(crew.brand, "team_briefs", {})
     team.post_brief(crew.brand, "manager", "direction", "Push 3-packs", "Body")
     assert "Push 3-packs" in assistant.run_tool(crew.brand, "team_briefs", {})
+
+
+def test_meeting_survives_unexpected_errors_and_names_them(crew, monkeypatch):
+    monkeypatch.setattr(jobs, "prepare_for_planning", lambda slug: None)
+    monkeypatch.setattr(researcher, "run", lambda b: {}["boom"])  # an unexpected KeyError
+    monkeypatch.setattr(manager, "direct", lambda b: 1 / 0)
+    msg = meeting.run("skipperpacks")
+    assert "market research skipped (unexpected problem: KeyError" in msg
+    assert "manager skipped (unexpected problem: ZeroDivisionError" in msg and "posts planned" in msg
+
+
+def test_agent_answer_formats_have_no_unsupported_limits():
+    from app.team import campaigns, finance
+    text = json.dumps([manager.DIRECTION_SCHEMA, manager.REPORT_SCHEMA, finance.BRIEF_SCHEMA, campaigns.SCHEMA,
+                       researcher.BRIEF_SCHEMA, researcher.REVIEW_SCHEMA])
+    for word in ("maxItems", "minItems", "maxLength", "minimum", "maximum"):
+        assert word not in text

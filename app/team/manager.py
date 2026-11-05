@@ -20,7 +20,7 @@ DIRECTION_SCHEMA = {
     "type": "object",
     "properties": {
         "headline": {"type": "string", "description": "This week's direction in one sentence."},
-        "priorities": {"type": "array", "maxItems": 3, "items": {"type": "object", "properties": {
+        "priorities": {"type": "array", "items": {"type": "object", "properties": {
             "priority": {"type": "string"}, "why": {"type": "string"}},
             "required": ["priority", "why"], "additionalProperties": False}},
         "plan_instructions": {"type": "string",
@@ -35,7 +35,7 @@ DIRECTION_SCHEMA = {
             "verdict": {"type": "string", "enum": ["worked", "did_not_work", "unclear"]},
             "what_we_learned": {"type": "string"}},
             "required": ["decision_id", "verdict", "what_we_learned"], "additionalProperties": False}},
-        "asks_for_owner": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
+        "asks_for_owner": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["headline", "priorities", "plan_instructions", "creator_notes", "decisions", "reviews",
                  "asks_for_owner"],
@@ -78,6 +78,7 @@ def direct(brand: Brand, client=None) -> dict:
             "content direction is yours to decide; anything that spends money goes in asks_for_owner.")
     data, cost, _ = claude.ask(client, _system(brand), [{"role": "user", "content": user}], DIRECTION_SCHEMA,
                                effort="high")
+    data["priorities"], data["asks_for_owner"] = data["priorities"][:3], data["asks_for_owner"][:3]
     due_ids = {d["id"] for d in decisions(brand, due_only=True)}
     for r in data["reviews"]:
         if r["decision_id"] in due_ids:
@@ -122,7 +123,7 @@ REPORT_SCHEMA = {
     "properties": {"summary": {"type": "string"}, "wins": {"type": "array", "items": {"type": "string"}},
                    "problems": {"type": "array", "items": {"type": "string"}},
                    "decided": {"type": "array", "items": {"type": "string"}},
-                   "needs_from_owner": {"type": "array", "maxItems": 3, "items": {"type": "string"}}},
+                   "needs_from_owner": {"type": "array", "items": {"type": "string"}}},
     "required": ["summary", "wins", "problems", "decided", "needs_from_owner"], "additionalProperties": False,
 }
 
@@ -134,6 +135,7 @@ def weekly_report(brand: Brand, client=None) -> dict:
             f"words, short lines.\n\n{team_inputs(brand)}")
     data, cost, _ = claude.ask(client, _system(brand), [{"role": "user", "content": user}], REPORT_SCHEMA,
                                effort="medium")
+    data["needs_from_owner"] = data["needs_from_owner"][:3]
     lights = {"green": "🟢", "amber": "🟡", "red": "🔴"}
     goal_lines = [f"{lights.get(p['status'], '⚪')} {p['label']}: "
                   f"{'—' if p['current'] is None else p['current']} (day 90: {p['final']})"
