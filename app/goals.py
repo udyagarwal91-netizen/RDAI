@@ -31,6 +31,8 @@ BUSINESS = {
     "payment_fee_pct": ("Payment gateway fee", "%"),
     "cod_share_pct": ("Orders paid cash on delivery (COD)", "%"),
     "rto_pct": ("COD orders refused / returned (RTO)", "%"),
+    "fx_rate_to_inr": ("Only if your ad account does NOT bill in ₹: ₹ per 1 unit of its currency (leave empty for ₹)",
+                       "₹"),
 }
 
 

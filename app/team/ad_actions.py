@@ -87,8 +87,9 @@ def _campaign(brand: Brand, name: str, objective: str) -> str:
                  special_ad_categories="[]", is_adset_budget_sharing_enabled="false")["id"]
 
 
-def _paise(rupees: float) -> str:
-    return str(int(round(float(rupees) * 100)))  # Meta wants budgets in paise
+def _paise(brand: Brand, rupees: float) -> str:
+    """₹ → the ad account's smallest unit (paise for ₹ accounts, cents for $ accounts)."""
+    return str(int(round(float(rupees) / meta_ads.to_inr(brand) * 100)))
 
 
 @timed("smo", "Making an approved ad change")
@@ -123,7 +124,7 @@ def execute(brand: Brand, pid: int) -> str:
         _post(brand, target, status="ACTIVE")
         return f"Switched on “{p['target_name']}”. It starts spending within minutes."
     if action == "budget":
-        _post(brand, target, daily_budget=_paise(params["to"]))
+        _post(brand, target, daily_budget=_paise(brand, params["to"]))
         return f"Daily budget of “{p['target_name']}” is now ₹{params['to']:g}."
 
     stamp = datetime.now().strftime("%d %b")
@@ -132,7 +133,7 @@ def execute(brand: Brand, pid: int) -> str:
         audience = _audience(brand, params.get("audience") or "checkout_14d", pixel)
         campaign = _campaign(brand, f"Team · Retargeting · {stamp}", "OUTCOME_SALES")
         adset = _post(brand, f"{_act(brand)}/adsets", name=f"Retargeting · {proposals.AUDIENCES.get(params.get('audience'), '')}"[:100],
-                      campaign_id=campaign, daily_budget=_paise(params["daily_budget"]), billing_event="IMPRESSIONS",
+                      campaign_id=campaign, daily_budget=_paise(brand, params["daily_budget"]), billing_event="IMPRESSIONS",
                       optimization_goal="OFFSITE_CONVERSIONS", bid_strategy="LOWEST_COST_WITHOUT_CAP",
                       promoted_object=json.dumps({"pixel_id": pixel, "custom_event_type": "PURCHASE"}),
                       targeting=json.dumps({"geo_locations": {"countries": ["IN"]}, "age_min": 18,
@@ -152,7 +153,7 @@ def execute(brand: Brand, pid: int) -> str:
         campaign = _campaign(brand, f"Team · Boost · {stamp}", "OUTCOME_ENGAGEMENT")
         end = (datetime.now() + timedelta(days=int(params.get("days") or 5))).strftime("%Y-%m-%dT%H:%M:%S+0530")
         adset = _post(brand, f"{_act(brand)}/adsets", name=f"Boost · {p['target_name']}"[:100], campaign_id=campaign,
-                      daily_budget=_paise(params["daily_budget"]), billing_event="IMPRESSIONS",
+                      daily_budget=_paise(brand, params["daily_budget"]), billing_event="IMPRESSIONS",
                       optimization_goal="POST_ENGAGEMENT", bid_strategy="LOWEST_COST_WITHOUT_CAP", end_time=end,
                       targeting=json.dumps({"geo_locations": {"countries": ["IN"]}, "age_min": 18}),
                       status="PAUSED")["id"]

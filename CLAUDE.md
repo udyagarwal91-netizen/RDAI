@@ -15,8 +15,12 @@ on Telegram ✅ → 2 captions/images/carousels/Gemini images + QC + approval �
 (WhatsApp follow-ups, YouTube Shorts, Google Ads — need the owner's accounts first). The full brief is the owner's original prompt; key decisions so far: laptop-only hosting for now
 (deploy-ready for Railway), captions in English with light Hinglish, max 4 reels/week, AI images may mix
 product-only / dressed-model / website-style model shots (owner chose a mix; brand form can restrict).
-Meta ads: use ONLY the "Skipper Packs" ad account (act_1840946140217408, business "Skipper Packs"); ignore every
-other account the token can see (skipper.india "Skippers India", Dolphin Digital "Skippers", "Skipper Brands" ones).
+Meta ads: the team uses exactly ONE ad account per computer, chosen on the Ads page (`app_state meta:ad_account`,
+typed ID wins; name-match auto-pick only when none is set). Owner's original laptop: "Skipper Packs"
+act_1840946140217408. Owner's second computer (2026-11-05): act_1671153230648383 ("Skipper Brands"). Never touch
+other accounts the token can see. Owner wants ALL money in ₹: amounts are shown, limited and set in ₹; an ₹-billed
+account needs no conversion (currency read from Meta). Only if Meta reports another currency are values converted to ₹ on read
+(`meta_ads.to_inr`, rate = Goals → business `fx_rate_to_inr`, default 88) and back to the account's cents on write.
 Baseline 15 Oct–3 Nov 2026 from that account + Shopify: ad spend ₹10.5k (~₹500/day, one prospecting ad set), purchase
 ROAS 5.6, blended ROAS ~5.9, CPA ₹60, link CTR 4.9%, AOV ~₹300, checkout completion 30%, 88% of orders from FB/IG.
 Owner's goal: ROAS 10 (planned via AOV ₹400 + checkout completion 40%). Planned next: 6-agent team + Agent HQ web app.

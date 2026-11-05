@@ -28,10 +28,13 @@ PURCHASE = ("omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase")
 ADD_TO_CART = ("omni_add_to_cart", "add_to_cart", "offsite_conversion.fb_pixel_add_to_cart")
 CHECKOUT = ("omni_initiated_checkout", "initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout")
 
-ACCESS_HELP = ("Meta wouldn't share the ad account's results. Check: (1) the System User token has the ads_read "
-               "permission (Connect accounts → Instagram + Facebook lists it); (2) business.facebook.com → Business "
-               "Settings → Accounts → Ad accounts → {name} → Assign people → your system user → tick “View "
-               "performance” (and “Manage campaigns” if the team should make ad changes).")
+ACCESS_HELP = ("Meta won't share your ads yet — the token is missing the ad permissions. Fix: (1) business.facebook.com "
+               "→ Settings → Users → System users → your system user → Assign assets → Ad accounts → tick your ad account "
+               "({name}) → "
+               "turn on Manage campaigns → Assign. (2) On the same page: Generate new token → your app → expiry Never → "
+               "tick everything as before PLUS ads_read and ads_management → copy it. (3) Here: Connect accounts → "
+               "Instagram + Facebook → paste → Save & test. If ads_read isn't in the list: developers.facebook.com → "
+               "your app → Use cases → add “Create & manage ads with Marketing API”, then try (2) again.")
 
 
 class AdsError(Exception):
@@ -57,14 +60,44 @@ def set_account(brand: Brand, raw: str) -> str:
     if not raw.isdigit():
         raise AdsError("The ad account ID is a number like 1840946140217408 (Ads Manager shows it at the top left).")
     set_state(brand.slug, "meta:ad_account", raw)
+    set_state(brand.slug, "meta:structure", "")  # forget the old account's campaigns
     log.info("Ad account set to act_%s", raw)
+    try:
+        read_currency(brand)
+    except AdsError as e:
+        log.info("Ad account currency not readable yet: %s", e)
     return f"act_{raw}"
+
+
+def read_currency(brand: Brand) -> str:
+    """Ask Meta which currency the ad account uses (₹ accounts need no conversion)."""
+    body = _call(brand, "", fields="name,currency")
+    set_state(brand.slug, "meta:currency", body.get("currency") or "INR")
+    set_state(brand.slug, "meta:account_name", body.get("name") or "")
+    return body.get("currency") or "INR"
+
+
+def currency(brand: Brand) -> str:
+    return get_state(brand.slug, "meta:currency") or "INR"
+
+
+def to_inr(brand: Brand) -> float:
+    """How many ₹ one unit of the ad account's currency is (1 for ₹ accounts; Goals page sets the rate otherwise)."""
+    if currency(brand) == "INR":
+        return 1.0
+    from app import goals
+    return float(goals.load(brand)["business"].get("fx_rate_to_inr") or 88)
 
 
 def discover(brand: Brand) -> list[dict]:
     """Ad accounts the token can see. If exactly one is named like the brand, it's chosen automatically."""
-    body = publisher._call("GET", f"{publisher._base(brand)}/me/adaccounts", _token(brand),
-                           fields="name,account_id,account_status,currency", limit="100")
+    try:
+        body = publisher._call("GET", f"{publisher._base(brand)}/me/adaccounts", _token(brand),
+                               fields="name,account_id,account_status,currency", limit="100")
+    except publisher.PublishError as e:
+        if "permission" in str(e).lower() or "token" in str(e).lower():
+            raise AdsError(ACCESS_HELP.format(name=account_id(brand) or 'the one you use')) from None
+        raise AdsError(str(e)) from None
     accounts = [{"id": a["account_id"], "name": a.get("name") or a["account_id"], "currency": a.get("currency"),
                  "active": a.get("account_status") == 1} for a in body.get("data", [])]
     set_state(brand.slug, "meta:accounts", json.dumps(accounts))
@@ -82,7 +115,7 @@ def _call(brand: Brand, path: str, **params) -> dict:
         return publisher._call("GET", f"{publisher._base(brand)}/{act}{path}", _token(brand), **params)
     except publisher.PublishError as e:
         if "permission" in str(e).lower() or "token" in str(e).lower():
-            raise AdsError(ACCESS_HELP.format(name=brand.name)) from None
+            raise AdsError(ACCESS_HELP.format(name=account_id(brand) or 'the one you use')) from None
         raise AdsError(str(e)) from None
 
 
@@ -92,7 +125,11 @@ def _pick(items: list[dict] | None, names: tuple[str, ...]) -> float:
 
 
 def refresh(brand: Brand, days: int = 30) -> int:
-    """Re-read daily results per ad for the last `days` days, plus the current campaign/ad set structure."""
+    """Re-read daily results per ad for the last `days` days, plus the current campaign/ad set structure.
+    Money is stored in ₹ (converted if the ad account uses another currency)."""
+    if not get_state(brand.slug, "meta:currency"):
+        read_currency(brand)
+    rate = to_inr(brand)
     until = datetime.now(IST).date()
     since = until - timedelta(days=days)
     rows, after = [], None
@@ -114,10 +151,10 @@ def refresh(brand: Brand, days: int = 30) -> int:
                 "campaign_name, spend, impressions, reach, frequency, link_clicks, add_to_cart, checkouts, purchases, "
                 "purchase_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (brand.slug, r["date_start"], r["ad_id"], r.get("ad_name"), r.get("adset_id"), r.get("adset_name"),
-                 r.get("campaign_id"), r.get("campaign_name"), float(r.get("spend") or 0), int(r.get("impressions") or 0),
+                 r.get("campaign_id"), r.get("campaign_name"), float(r.get("spend") or 0) * rate, int(r.get("impressions") or 0),
                  int(r.get("reach") or 0), float(r.get("frequency") or 0), int(r.get("inline_link_clicks") or 0),
                  int(_pick(r.get("actions"), ADD_TO_CART)), int(_pick(r.get("actions"), CHECKOUT)),
-                 int(_pick(r.get("actions"), PURCHASE)), _pick(r.get("action_values"), PURCHASE)))
+                 int(_pick(r.get("actions"), PURCHASE)), _pick(r.get("action_values"), PURCHASE) * rate))
     structure(brand, refresh_now=True)
     set_state(brand.slug, "meta:last_refresh", datetime.now(IST).isoformat(timespec="seconds"))
     log.info("Meta ads refreshed: %d ad-days since %s", len(rows), since)
@@ -135,7 +172,8 @@ def structure(brand: Brand, refresh_now: bool = False) -> dict:
     out = {"read_at": datetime.now(IST).isoformat(timespec="seconds"),
            "adsets": [{"id": a["id"], "name": a.get("name"), "status": a.get("effective_status") or a.get("status"),
                        # Meta gives budgets in the currency's smallest unit (paise for INR)
-                       "daily_budget": round(int(a["daily_budget"]) / 100, 2) if a.get("daily_budget") else None,
+                       "daily_budget": round(int(a["daily_budget"]) / 100 * to_inr(brand), 2)
+                       if a.get("daily_budget") else None,
                        "campaign_id": a.get("campaign_id"), "campaign": (a.get("campaign") or {}).get("name"),
                        "objective": (a.get("campaign") or {}).get("objective")} for a in adsets],
            "ads": [{"id": a["id"], "name": a.get("name"), "status": a.get("effective_status") or a.get("status"),

@@ -27,7 +27,16 @@
 
 <section class="card">
   <h2>Ad account</h2>
-  {% if account %}<p>Using <b>{{ account }}</b> only. Every other ad account is ignored.</p>{% endif %}
+  {% if account %}<p>Using <b>{{ account_name or account }}</b> ({{ account }}) only. Every other ad account is ignored.
+    {% if account_currency != "INR" %}<br><span class="muted">This account is in {{ account_currency }}; amounts are shown in ₹ at
+    ₹{{ fx }} per 1 {{ account_currency }} (change it on the <a href="{{ url_for('goals_page') }}">Goals page</a>).</span>{% endif %}</p>
+  {% else %}<p>No ad account chosen yet on this computer.</p>{% endif %}
+  <form method="post" action="{{ url_for('campaigns_page') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Ad account ID <span class="muted">(Ads Manager shows it at the top left, e.g. 1671153230648383)</span>
+      <input type="text" name="account" inputmode="numeric" value="{{ (account or '')[4:] }}"></label>
+    <div class="actions"><button type="submit">Use this ad account</button></div>
+  </form>
   <form method="post" action="{{ url_for('campaigns_page') }}" class="actions">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <button type="submit" name="find" value="1" class="secondary">Find my ad accounts</button>

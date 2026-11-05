@@ -173,6 +173,9 @@ def register(app, login_required, current_slug, load):
         accounts = json.loads(get_state(brand.slug, "meta:accounts") or "[]") if brand else []
         return render_template("ads.html", brand=brand, brand_error=brand_error,
                                account=meta_ads.account_id(brand) if brand else None, accounts=accounts,
+                               account_name=get_state(brand.slug, "meta:account_name") if brand else "",
+                               account_currency=meta_ads.currency(brand) if brand else "INR",
+                               fx=meta_ads.to_inr(brand) if brand else 1,
                                structure=meta_ads.structure(brand) if brand else {"adsets": [], "ads": []},
                                adsets={a["id"]: a for a in meta_ads.by(brand, "adset", 7)} if brand else {},
                                ads7={a["id"]: a for a in meta_ads.by(brand, "ad", 7)} if brand else {},

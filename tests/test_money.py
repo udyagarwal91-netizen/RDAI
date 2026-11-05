@@ -35,8 +35,8 @@ def _insight(day, ad, adset, spend, buys, value, clicks=100, imp=2000, freq=1.2)
 class FakeGraph:
     """Stands in for graph.facebook.com: ad account reads and writes."""
 
-    def __init__(self):
-        self.posts = []
+    def __init__(self, currency="INR"):
+        self.posts, self.currency = [], currency
         self.insights = []
         for n in range(1, 8):  # good ad AD1 in AS1; bad ad AD2 in AS2
             self.insights.append(_insight(_day(n), "AD1", "AS1", 400, 7, 2400))
@@ -52,6 +52,8 @@ class FakeGraph:
                               "currency": "INR"},
                              {"account_id": "644872447824093", "name": "Skippers", "account_status": 1,
                               "currency": "INR"}]}
+        if path.startswith("act_") and "/" not in path:
+            return {"currency": self.currency, "name": "Skipper Brands"}
         if path.endswith("/insights"):
             return {"data": self.insights, "paging": {"cursors": {"after": "x"}}}
         if path.endswith("/adsets"):
@@ -247,3 +249,31 @@ def test_money_page_with_numbers(client, monkeypatch):
     page = client.get("/money").get_data(as_text=True)
     assert "Blended ROAS" in page and "₹3,220" in page and "Break-even ROAS: not known yet" in page
     assert "read_reports" in page  # the missing permission is explained, not hidden
+
+
+
+def test_chosen_ad_account_in_dollars_is_converted_to_rupees(shop):
+    shop.graph.currency = "USD"
+    meta_ads.set_account(shop.brand, "act_1671153230648383")
+    assert meta_ads.account_id(shop.brand) == "act_1671153230648383" and meta_ads.currency(shop.brand) == "USD"
+    meta_ads.discover(shop.brand)  # a chosen account is never replaced by the name match
+    assert meta_ads.account_id(shop.brand) == "act_1671153230648383"
+    meta_ads.refresh(shop.brand)
+    t = meta_ads.totals(shop.brand, 7)
+    assert t["spend"] == 7 * 460 * 88 and meta_ads.active_daily_budget(shop.brand) == 460 * 88
+    goals.record(shop.brand, {"blended_roas": 9}, "test")
+    doc = goals.load(shop.brand)
+    doc["guardrails"].update(daily_ad_budget=50000, monthly_ad_budget=10_000_000)
+    goals.save(shop.brand, doc)
+    pid, _ = proposals.create(shop.brand, "smo", "budget", "AS1", "Set AS1", {"from": 35200, "to": 38720}, "w", "m")
+    ad_actions.decide(shop.brand, pid, True)
+    assert shop.graph.posts[-1][1]["daily_budget"] == "44000"  # ₹38,720 = US$440.00 = 44000 cents
+
+
+def test_ads_page_takes_a_typed_account_id(client, monkeypatch):
+    graph = FakeGraph("USD")
+    monkeypatch.setenv("META_ACCESS_TOKEN", "EAAtest123456789")
+    monkeypatch.setattr(publisher, "_call", graph.call)
+    client.post("/ads", data={"csrf": _token(client), "account": "1671153230648383"})
+    page = client.get("/ads").get_data(as_text=True)
+    assert "Skipper Brands" in page and "act_1671153230648383" in page and "in USD" in page
