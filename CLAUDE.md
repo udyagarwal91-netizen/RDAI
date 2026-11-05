@@ -127,6 +127,11 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   `writer.team_guidance`); `manager.weekly_report` Monday 09:30. `meeting.run` = weekly timer (`team_week`, replaces
   the plain plan): research → smo/finance weekly briefs → direction → plan → review → `campaigns.plan`. Each step's
   failure is noted and skipped; the plan is always made.
+- Work log: every agent task runs inside `team.working(brand, agent, task)` (or the `@team.timed` decorator) →
+  `agent_work` rows (start, seconds, status working/done/failed, cost, result). `planner.make_plan` and
+  `producer.make_draft` wrap `_make_plan`/`_make_draft`. Team page shows six agent cards; `/team/agent/<agent>` shows
+  status, 7/30-day time and cost, time by task, work log and the agent's output. Researcher finds competitors itself
+  monthly (`find_competitors` → `app_state team:competitors_auto`), `watch_list` = owner's handles + found ones.
 - Money (Phases D/E): `app/meta_ads.py` reads ONLY the brand's ad account (`app_state meta:ad_account`, auto-picked
   by exact name match in `discover`, also from the Meta key test) → `ads_daily` + `meta:structure` (budgets in paise
   → ₹). `app/sales.py` (needs read_orders; funnel via `shopifyqlQuery` needs read_reports) → `sales_daily`.

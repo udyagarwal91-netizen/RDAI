@@ -10,7 +10,10 @@ and you can read exactly why each decision was made.
 
 import json
 import logging
+import time
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from functools import wraps
 from pathlib import Path
 
 from app import telegram
@@ -133,6 +136,121 @@ def review_decision(brand: Brand, decision_id: int, status: str, outcome: str) -
     with connect() as conn:
         conn.execute("UPDATE team_decisions SET status = ?, outcome = ? WHERE id = ? AND brand = ?",
                      (status, outcome[:1000], decision_id, brand.slug))
+
+
+# ---------------------------------------------------------------- the work log (what each agent is doing)
+
+@contextmanager
+def working(brand: Brand, agent: str, task: str):
+    """Record one task in the agent's work log: start, finish, time taken, cost and result.
+    Use as:  with working(brand, "researcher", "Market research") as job:  ...  job["cost_usd"] = 0.12"""
+    started = time.monotonic()
+    with connect() as conn:
+        wid = conn.execute("INSERT INTO agent_work (brand, agent, task, started_at) VALUES (?, ?, ?, ?)",
+                           (brand.slug, agent, task, _now())).lastrowid
+    job = {"cost_usd": 0.0, "result": ""}
+    status = "done"
+    try:
+        yield job
+    except Exception as e:
+        status, job["result"] = "failed", f"{type(e).__name__}: {e}"[:300]
+        raise
+    finally:
+        with connect() as conn:
+            conn.execute("UPDATE agent_work SET finished_at = ?, seconds = ?, status = ?, cost_usd = ?, result = ? "
+                         "WHERE id = ?", (_now(), round(time.monotonic() - started, 1), status,
+                                          float(job.get("cost_usd") or 0), str(job.get("result") or "")[:500], wid))
+
+
+def _describe(out) -> tuple[str, float]:
+    """A one-line result and the cost, read from whatever an agent's task returned."""
+    if isinstance(out, dict):
+        data = out.get("data") if isinstance(out.get("data"), dict) else {}
+        text = data.get("headline") or out.get("summary") or out.get("title") or ""
+        if not text and isinstance(out.get("metrics"), dict):
+            roas = out["metrics"].get("blended_roas")
+            text = "Numbers updated" + (f" — blended ROAS {roas}" if roas else "")
+        return str(text), float(out.get("cost_usd") or 0)
+    if isinstance(out, tuple) and len(out) == 2 and isinstance(out[1], (int, float)):
+        first = out[0]
+        return (str(first.get("verdict", "")) if isinstance(first, dict) else ""), float(out[1])
+    if isinstance(out, list):
+        return f"{len(out)} item(s)", 0.0
+    if out is None:
+        return "Nothing to do (no data yet)", 0.0
+    return str(out)[:200], 0.0
+
+
+def timed(agent: str, task: str):
+    """Decorator: log every call of an agent's task in its work log (the first argument must be the brand)."""
+    def wrap(fn):
+        @wraps(fn)
+        def run(brand, *args, **kwargs):
+            with working(brand, agent, task) as job:
+                out = fn(brand, *args, **kwargs)
+                job["result"], job["cost_usd"] = _describe(out)
+                return out
+        return run
+    return wrap
+
+
+def work_log(brand: Brand, agent: str | None = None, limit: int = 50) -> list[dict]:
+    sql = "SELECT * FROM agent_work WHERE brand = ?" + (" AND agent = ?" if agent else "") + " ORDER BY id DESC LIMIT ?"
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(sql, (brand.slug, agent, limit) if agent else (brand.slug, limit))]
+    for r in rows:
+        r["when"] = datetime.fromisoformat(r["started_at"]).strftime("%a %d %b, %I:%M %p")
+        if r["status"] == "working" and datetime.fromisoformat(r["started_at"]) < datetime.now() - timedelta(hours=2):
+            r["status"] = "interrupted"  # the app was closed while it worked
+        r["duration"] = _duration(r["seconds"])
+    return rows
+
+
+def _duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{seconds // 60:.0f}m {seconds % 60:.0f}s"
+    return f"{seconds // 3600:.0f}h {(seconds % 3600) // 60:.0f}m"
+
+
+def work_stats(brand: Brand, agent: str, days: int = 7) -> dict:
+    """Totals for one agent over the last `days` days, with a breakdown by kind of task."""
+    since = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT task, status, seconds, cost_usd FROM agent_work WHERE brand = ? "
+                                              "AND agent = ? AND started_at >= ?", (brand.slug, agent, since))]
+    by_task: dict[str, dict] = {}
+    for r in rows:
+        t = by_task.setdefault(r["task"], {"task": r["task"], "count": 0, "seconds": 0.0, "cost_usd": 0.0, "failed": 0})
+        t["count"] += 1
+        t["seconds"] += r["seconds"] or 0
+        t["cost_usd"] += r["cost_usd"] or 0
+        t["failed"] += r["status"] == "failed"
+    total = sum(t["seconds"] for t in by_task.values())
+    count = sum(t["count"] for t in by_task.values())
+    for t in by_task.values():  # share of time (or of tasks, when everything took under a second)
+        t["share"] = round(100 * t["seconds"] / total) if total >= 1 else round(100 * t["count"] / count) if count else 0
+        t["duration"] = _duration(t["seconds"])
+    return {"days": days, "tasks": len(rows), "seconds": total, "duration": _duration(total),
+            "cost_usd": round(sum(t["cost_usd"] for t in by_task.values()), 3),
+            "failed": sum(t["failed"] for t in by_task.values()),
+            "by_task": sorted(by_task.values(), key=lambda t: t["seconds"], reverse=True)}
+
+
+def now_working(brand: Brand) -> dict[str, dict]:
+    """What each agent is busy with right now (only tasks started in the last 2 hours and not finished)."""
+    since = (datetime.now() - timedelta(hours=2)).isoformat(timespec="seconds")
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM agent_work WHERE brand = ? AND status = 'working' "
+                                              "AND started_at >= ? ORDER BY id", (brand.slug, since))]
+    out = {}
+    for r in rows:
+        r["minutes"] = max(0, int((datetime.now() - datetime.fromisoformat(r["started_at"])).total_seconds() // 60))
+        out[r["agent"]] = r
+    return out
 
 
 # ---------------------------------------------------------------- talking to the owner

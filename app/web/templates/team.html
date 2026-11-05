@@ -8,6 +8,20 @@
 {% include "_jobs.html" %}
 
 <section class="card">
+  <h2>Your six agents</h2>
+  <p class="muted">Tap one to see what it's doing, how long its work takes, what it costs and everything it has done.</p>
+  <div class="grid">
+    {% for key, a in agents.items() %}{% set w = week.get(key) %}{% set b = busy.get(key) %}
+    <a class="tile" href="{{ url_for('team_agent', agent=key) }}" style="text-decoration:none; color:inherit">
+      <b>{{ a.icon }} {{ a.name }}</b>
+      <span>{% if b %}🟢 Working: {{ b.task }} ({{ b.minutes }} min){% else %}<span class="muted">⚪ Idle</span>{% endif %}</span>
+      <span class="muted">This week: {{ w.tasks }} task(s) · {{ w.duration }} · ≈ ₹{{ (w.cost_usd * 88)|round|int }}{% if w.failed %} · {{ w.failed }} failed{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
   <h2>Run now</h2>
   <div class="grid">
     {% for key, title, what in [("team_week", "Full team meeting", "Research → results → Manager's direction → plan → review → ad plan. 3–6 minutes, about ₹40–80."),

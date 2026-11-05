@@ -9,7 +9,7 @@ import logging
 
 from app import claude, goals, insights, meta_ads
 from app.brands import Brand
-from app.team import AGENTS, post_brief, proposals, skill
+from app.team import AGENTS, post_brief, proposals, skill, timed
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ def findings(brand: Brand) -> dict:
     return out
 
 
+@timed("smo", "Daily ad check")
 def daily_tick(brand: Brand) -> list[int]:
     """Propose pausing clear losers (one ✅ each). Returns new proposal ids."""
     new = []
@@ -75,6 +76,7 @@ BRIEF_SCHEMA = {
 }
 
 
+@timed("smo", "Weekly results brief")
 def weekly_brief(brand: Brand, client=None) -> dict | None:
     has_ads = bool(meta_ads.account_id(brand)) and meta_ads.totals(brand, 7)["spend"] > 0
     rep = insights.report(brand, 7)

@@ -69,7 +69,36 @@ def register(app, login_required, current_slug, load):
                                decisions=team.decisions(brand, 20) if brand else [],
                                skills={a: team.skill(brand, a) for a in team.AGENTS} if brand else {},
                                custom={a: team.is_custom(brand, a) for a in team.AGENTS} if brand else {},
+                               busy=team.now_working(brand) if brand else {},
+                               week={a: team.work_stats(brand, a, 7) for a in team.AGENTS} if brand else {},
                                jobs=job_status, any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    @app.route("/team/agent/<agent>")
+    @login_required
+    def team_agent(agent):
+        from app import producer, team
+        from app.team import proposals, researcher
+        brand, brand_error = load(current_slug())
+        if agent not in team.AGENTS:
+            abort(404)
+        if not brand:
+            return render_template("agent.html", brand=None, brand_error=brand_error, key=agent,
+                                   a=team.AGENTS[agent], agents=team.AGENTS)
+        mine = [b for b in team.briefs(brand, 60) if b["agent"] == agent][:10]
+        extra = {}
+        if agent == "creator":
+            extra["drafts"] = producer.recent_drafts(brand, 8)
+        if agent == "researcher":
+            extra["rivals"] = researcher.found_competitors(brand)
+        if agent in ("smo", "planner", "finance"):
+            extra["proposals"] = [p for p in proposals.listing(brand, None, 40) if p["agent"] == agent][:10]
+        if agent == "manager":
+            extra["decisions"] = team.decisions(brand, 15)
+        return render_template("agent.html", brand=brand, brand_error=brand_error, key=agent, a=team.AGENTS[agent],
+                               agents=team.AGENTS, busy=team.now_working(brand).get(agent),
+                               week=team.work_stats(brand, agent, 7), month=team.work_stats(brand, agent, 30),
+                               log=team.work_log(brand, agent, 40), briefs=mine, custom=team.is_custom(brand, agent),
+                               **extra)
 
     @app.route("/team/skill/<agent>", methods=["POST"])
     @login_required
@@ -94,8 +123,10 @@ def register(app, login_required, current_slug, load):
             flash(f"Saved {len(handles)} competitor account(s). The Researcher reads them every week.", "ok")
             return redirect(url_for("research_page"))
         brief = team.latest(brand, "market", max_age_days=365) if brand else None
+        from app.team import researcher
         return render_template("research.html", brand=brand, brand_error=brand_error, brief=brief,
-                               competitors=team.competitors(brand) if brand else [])
+                               competitors=team.competitors(brand) if brand else [],
+                               rivals=researcher.found_competitors(brand) if brand else {"list": []})
 
     # ---------- Money (Finance agent) ----------
 

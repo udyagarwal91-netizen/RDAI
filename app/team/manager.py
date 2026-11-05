@@ -12,7 +12,7 @@ from datetime import datetime
 from app import claude, goals, insights
 from app.brands import Brand
 from app.db import set_state
-from app.team import (AGENTS, add_decision, decisions, latest, post_brief, review_decision, say, skill)
+from app.team import (AGENTS, add_decision, decisions, latest, post_brief, review_decision, say, skill, timed)
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ def team_inputs(brand: Brand) -> str:
     return "\n\n".join(parts)
 
 
+@timed("manager", "Deciding the week's direction")
 def direct(brand: Brand, client=None) -> dict:
     """Decide this week's direction. Stores the brief and decisions; returns the direction."""
     client = client or claude.client_for(brand)
@@ -128,6 +129,7 @@ REPORT_SCHEMA = {
 }
 
 
+@timed("manager", "Monday report")
 def weekly_report(brand: Brand, client=None) -> dict:
     client = client or claude.client_for(brand)
     user = ("Write the owner's one-page Monday report: goal progress first (use the green/amber/red statuses "

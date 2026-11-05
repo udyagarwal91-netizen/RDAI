@@ -20,6 +20,10 @@ def _answer_for(schema: dict, calls: int) -> dict:
     if "posts" in props:  # the planner
         items = props["posts"]["items"]["properties"]
         return _plan(items["slot"]["enum"], items["styles"]["items"]["enum"], 2, fmt="carousel")
+    if "competitors" in props:
+        return {"competitors": [{"name": "Rival Co", "instagram": "@Rival_Co", "website": "rival.in",
+                                 "price_note": "3-pack ₹599 (₹200/pc), rival.in", "why": "same packs"},
+                                {"name": "No Insta", "instagram": "", "website": "x.in", "price_note": "?", "why": "?"}]}
     if "insights" in props:
         return {"headline": "Comfort-proof reels beat offers this month", "insights": [
             {"insight": "Reels showing a stretch test get 2× engagement", "evidence": "@rival post 2.3× avg",
@@ -194,3 +198,54 @@ def test_agent_answer_formats_have_no_unsupported_limits():
                        researcher.BRIEF_SCHEMA, researcher.REVIEW_SCHEMA])
     for word in ("maxItems", "minItems", "maxLength", "minimum", "maximum"):
         assert word not in text
+
+
+
+def test_researcher_finds_competitors_itself_and_logs_its_work(crew, monkeypatch):
+    scanned = []
+    monkeypatch.setattr(researcher, "scan_competitor", lambda b, h: scanned.append(h) or
+                        {"handle": h, "formats": {}, "top_posts": [], "posts": []})
+    team.set_competitors(crew.brand, "@my_pick")
+    researcher.run(crew.brand)
+    found = researcher.found_competitors(crew.brand)
+    assert found["list"][0]["instagram"] == "rival_co" and found["found_at"]
+    assert scanned == ["my_pick", "rival_co"]  # yours first, then the ones it found (no empty handles)
+    prompt = crew.claude.calls[-1]["messages"][0]["content"]
+    assert "Rival Co" in prompt and "₹200/pc" in prompt
+    log = team.work_log(crew.brand, "researcher")
+    assert [w["task"] for w in log] == ["Finding competitors", "Market research"]  # newest first; found inside research
+    assert all(w["status"] == "done" and w["seconds"] is not None for w in log)
+    assert log[0]["result"].startswith("Found 2 competitors") and log[1]["cost_usd"] > 0
+    researcher.run(crew.brand)  # within a month: no new search
+    assert [w["task"] for w in team.work_log(crew.brand, "researcher")].count("Finding competitors") == 1
+
+
+def test_work_log_records_failures_and_stats(crew):
+    with pytest.raises(ZeroDivisionError):
+        with team.working(crew.brand, "smo", "Daily ad check"):
+            1 / 0
+    with team.working(crew.brand, "smo", "Daily ad check") as job:
+        job["cost_usd"] = 0.5
+    w = team.work_stats(crew.brand, "smo", 7)
+    assert w["tasks"] == 2 and w["failed"] == 1 and w["cost_usd"] == 0.5 and w["by_task"][0]["share"] == 100
+    assert team.work_log(crew.brand, "smo")[1]["result"].startswith("ZeroDivisionError")
+    assert team.now_working(crew.brand) == {}
+
+
+def test_planner_and_creator_work_is_logged(crew):
+    planner.make_plan(crew.brand, client=crew.claude)
+    entry = team.work_log(crew.brand, "planner")[0]
+    assert entry["task"] == "Weekly content plan" and "posts planned" in entry["result"]
+
+
+def test_agent_pages(client):
+    b = load_brand("skipperpacks")
+    with team.working(b, "researcher", "Market research") as job:
+        job["result"] = "Brief written"
+    page = client.get("/team/agent/researcher").get_data(as_text=True)
+    assert "Work log" in page and "Brief written" in page and "Where the time goes" in page
+    for key in team.AGENTS:
+        assert client.get(f"/team/agent/{key}").status_code == 200
+    assert client.get("/team/agent/nobody").status_code == 404
+    assert "Your six agents" in client.get("/team").get_data(as_text=True)
+    assert "Competitors the Researcher found" in client.get("/research").get_data(as_text=True)

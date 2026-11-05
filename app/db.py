@@ -137,6 +137,20 @@ CREATE TABLE IF NOT EXISTS team_decisions (
     created_at      TEXT NOT NULL
 );
 
+-- Every task each agent works on: when, how long, what it cost, how it went (the agents' work log)
+CREATE TABLE IF NOT EXISTS agent_work (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand           TEXT NOT NULL,
+    agent           TEXT NOT NULL,
+    task            TEXT NOT NULL,
+    started_at      TEXT NOT NULL,
+    finished_at     TEXT,
+    seconds         REAL,
+    status          TEXT DEFAULT 'working',   -- working / done / failed
+    cost_usd        REAL DEFAULT 0,
+    result          TEXT
+);
+
 -- Changes to Meta ads proposed by the team. Nothing runs until the owner approves it.
 CREATE TABLE IF NOT EXISTS ad_proposals (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +205,7 @@ CREATE TABLE IF NOT EXISTS sales_daily (
 
 CREATE INDEX IF NOT EXISTS idx_posts_due ON posts(status, scheduled_for);
 CREATE INDEX IF NOT EXISTS idx_briefs ON team_briefs(brand, kind, id);
+CREATE INDEX IF NOT EXISTS idx_work ON agent_work(brand, agent, id);
 CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(brand, status);
 """
 

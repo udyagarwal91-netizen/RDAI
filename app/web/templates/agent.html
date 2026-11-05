@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }}{% endblock %}
+{% block body %}
+<div class="toc">{% for k, x in agents.items() %}<a href="{{ url_for('team_agent', agent=k) }}" {% if k == key %}style="background:var(--soft); color:var(--ink)"{% endif %}>{{ x.icon }} {{ x.name }}</a>{% endfor %}</div>
+<h1>{{ a.icon }} {{ a.name }}</h1>
+<p class="muted">{{ a.role }}</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+
+{% if brand %}
+<section class="card">
+  {% if busy %}<p>🟢 <b>Working now:</b> {{ busy.task }} — for {{ busy.minutes }} min (started {{ busy.started_at[11:16] }}).</p>
+  {% else %}<p>⚪ <b>Idle.</b>{% if log %} Last task: {{ log[0].task }}, {{ log[0].when }}.{% endif %}</p>{% endif %}
+  <div class="kpis">
+    <div class="kpi"><span class="muted">Tasks this week</span><b>{{ week.tasks }}</b><span class="muted">30 days: {{ month.tasks }}</span></div>
+    <div class="kpi"><span class="muted">Time worked this week</span><b>{{ week.duration }}</b><span class="muted">30 days: {{ month.duration }}</span></div>
+    <div class="kpi"><span class="muted">AI cost this week</span><b>≈ ₹{{ (week.cost_usd * 88)|round|int }}</b><span class="muted">30 days ≈ ₹{{ (month.cost_usd * 88)|round|int }}</span></div>
+    <div class="kpi"><span class="muted">Failed (30 days)</span><b>{{ month.failed }}</b><span class="muted">details in the log below</span></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Where the time goes <span class="muted">(last 30 days)</span></h2>
+  {% for t in month.by_task %}
+  <div style="margin-top:10px"><div class="row-head"><span>{{ t.task }}</span>
+    <span class="muted">{{ t.count }}× · {{ t.duration }} · ≈ ₹{{ (t.cost_usd * 88)|round|int }}{% if t.failed %} · {{ t.failed }} failed{% endif %}</span></div>
+    <div class="progress"><div style="width: {{ t.share }}%"></div></div></div>
+  {% else %}<p class="muted">No work recorded yet.</p>{% endfor %}
+</section>
+
+<section class="card">
+  <h2>Work log</h2>
+  <div class="scroll"><table class="stats">
+    <tr><th>Task</th><th>When</th><th>Took</th><th>Cost</th><th></th></tr>
+    {% for w in log %}
+    <tr><td>{{ w.task }}{% if w.result %}<div class="muted">{{ w.result }}</div>{% endif %}</td><td>{{ w.when }}</td>
+      <td>{{ w.duration }}</td><td>{% if w.cost_usd %}≈ ₹{{ (w.cost_usd * 88)|round(1) }}{% else %}—{% endif %}</td>
+      <td>{{ {"done": "✅", "failed": "❌", "working": "⏳", "interrupted": "⚠️"}.get(w.status, "") }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">Nothing yet.</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+{% if rivals is defined %}
+<section class="card">
+  <h2>Competitors found <span class="muted">{% if rivals.found_at %}(searched {{ rivals.found_at }}; re-checked monthly){% endif %}</span></h2>
+  {% for c in rivals.list %}
+  <div class="feed-item"><b>{{ c.name }}</b>{% if c.instagram %} · @{{ c.instagram }}{% endif %}{% if c.website %} · {{ c.website }}{% endif %}
+    <div class="muted">{{ c.price_note }} — {{ c.why }}</div></div>
+  {% else %}<p class="muted">Not searched yet — it happens at the next market research.</p>{% endfor %}
+</section>
+{% endif %}
+
+{% if drafts is defined %}
+<section class="card"><h2>Latest drafts</h2>
+  {% for d in drafts %}<div class="feed-item">#{{ d.id }} · {{ d.format_label }} · {{ d.status }} · {{ (d.caption or "")[:90] }}</div>
+  {% else %}<p class="muted">No drafts yet.</p>{% endfor %}
+  <p><a href="{{ url_for('drafts_page') }}">All drafts →</a></p></section>
+{% endif %}
+
+{% if proposals is defined %}
+<section class="card"><h2>Ad changes proposed</h2>
+  {% for p in proposals %}<div class="feed-item">{{ p.summary }} <span class="muted">· {{ p.status }}</span></div>
+  {% else %}<p class="muted">None yet.</p>{% endfor %}</section>
+{% endif %}
+
+{% if decisions is defined %}
+<section class="card"><h2>Decisions</h2>
+  {% for d in decisions %}<div class="feed-item">{{ {"worked": "✅", "did_not_work": "❌", "unclear": "❔"}.get(d.status, "⏳") }} {{ d.decision }}
+    <span class="muted">· check {{ d.check_on }}</span></div>{% else %}<p class="muted">None yet.</p>{% endfor %}</section>
+{% endif %}
+
+<section class="card"><h2>Briefs written</h2>
+  {% for b in briefs %}<div class="feed-item"><b>{{ b.title }}</b> <span class="muted">· {{ b.when }}</span>
+    <details><summary>Read</summary><div class="md">{{ b.body }}</div></details></div>
+  {% else %}<p class="muted">{{ "The Creator's work is drafts (above)." if key == "creator" else "None yet." }}</p>{% endfor %}
+</section>
+
+<p class="muted">Playbook: {{ "your edited version" if custom else "default" }} — <a href="{{ url_for('team_page') }}#skills">read or edit it</a>.</p>
+{% endif %}
+{% endblock %}

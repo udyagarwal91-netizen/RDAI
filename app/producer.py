@@ -100,6 +100,22 @@ def reels_this_week(brand: Brand, exclude_id: int | None = None) -> int:
 
 def make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | None = None,
                replace_draft_id: int | None = None, owner_note: str = "", client=None) -> int:
+    """Make one draft (the Content Creator's main job) and log the work."""
+    from app.team import working
+    post = plan_row or on_demand or {}
+    label = FORMAT_LABELS.get(post.get("format"), "post")
+    task = f"Remaking draft #{replace_draft_id}" if replace_draft_id else f"Making a {label.lower()}"
+    with working(brand, "creator", task) as job:
+        draft_id = _make_draft(brand, plan_row, on_demand=on_demand, replace_draft_id=replace_draft_id,
+                               owner_note=owner_note, client=client)
+        d = get_draft(brand, draft_id)
+        job["result"] = f"Draft #{draft_id}" + (f" ({len(d['warnings'])} warning(s))" if d and d["warnings"] else "")
+        job["cost_usd"] = d["cost_usd"] if d else 0
+        return draft_id
+
+
+def _make_draft(brand: Brand, plan_row: dict | None = None, *, on_demand: dict | None = None,
+                replace_draft_id: int | None = None, owner_note: str = "", client=None) -> int:
     """Make (or remake) one draft. `owner_note` is what the owner typed for a regenerate. Returns the draft id."""
     post = dict(plan_row or on_demand)
     post["owner_note"] = owner_note.strip()

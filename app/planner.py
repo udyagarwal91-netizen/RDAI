@@ -271,6 +271,14 @@ def check_post(post: dict, styles_by_id: dict, brand: Brand) -> list[str]:
 # ---------------------------------------------------------------- main
 
 def make_plan(brand: Brand, start: date | None = None, client=None, note: str = "") -> dict:
+    from app.team import working
+    with working(brand, "planner", "Weekly content plan") as job:
+        result = _make_plan(brand, start, client, note)
+        job["result"], job["cost_usd"] = f"{len(result['rows'])} posts planned", result["cost_usd"]
+        return result
+
+
+def _make_plan(brand: Brand, start: date | None = None, client=None, note: str = "") -> dict:
     """Make and save the plan. Returns {"summary", "rows", "cost_usd", "model"}."""
     tz = ZoneInfo(brand.config["schedule"].get("timezone", "Asia/Kolkata"))
     start = start or (datetime.now(tz).date() + timedelta(days=1))

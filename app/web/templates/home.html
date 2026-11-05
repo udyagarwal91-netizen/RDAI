@@ -24,8 +24,8 @@
 <section class="card">
   <div class="row-head"><h2>🧠 Latest from your team</h2><a href="{{ url_for('team_page') }}">Team room →</a></div>
   {% for b in team_news %}
-  <div class="feed-item"><span class="agent-tag">{{ b.icon }} {{ b.agent_name }}</span> · {{ b.title }}
-    <span class="muted">· {{ b.created_at }}</span></div>
+  <div class="feed-item"><a class="agent-tag" href="{{ url_for('team_agent', agent=b.agent) }}" style="color:inherit">{{ b.icon }} {{ b.agent_name }}</a> · {{ b.title }}
+    <span class="muted">· {{ b.when }}</span></div>
   {% endfor %}
 </section>
 {% endif %}

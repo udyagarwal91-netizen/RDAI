@@ -9,7 +9,7 @@ import logging
 
 from app import claude, goals, insights, meta_ads
 from app.brands import Brand
-from app.team import AGENTS, latest, post_brief, proposals, say, skill
+from app.team import AGENTS, latest, post_brief, proposals, say, skill, timed
 
 log = logging.getLogger(__name__)
 LAYERS = ["prospecting", "warm_boost", "retarget_warm", "retarget_hot", "customers"]
@@ -58,6 +58,7 @@ def _boost_candidates(brand: Brand) -> list[dict]:
             for r in rows[:5]]
 
 
+@timed("planner", "Ad campaign plan")
 def plan(brand: Brand, client=None) -> dict | None:
     """Write the campaign plan and store its proposals. None if there's no ad account to plan for yet."""
     if not meta_ads.account_id(brand):

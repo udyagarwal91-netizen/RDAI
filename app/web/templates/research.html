@@ -7,7 +7,17 @@
 {% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
 
 <section class="card">
-  <h2>Competitors to watch</h2>
+  <h2>Competitors the Researcher found</h2>
+  <p class="muted">It searches the web for brands selling the same kind of packs at similar prices, every month, and
+    reads their Instagram posts every week. {% if rivals.found_at %}Last search: {{ rivals.found_at }}.{% endif %}</p>
+  {% for c in rivals.list %}
+  <div class="feed-item"><b>{{ c.name }}</b>{% if c.instagram %} · @{{ c.instagram }}{% endif %}
+    <div class="muted">{{ c.price_note }} — {{ c.why }}</div></div>
+  {% else %}<p class="muted">Not searched yet — press <b>Market research</b> on the Team page.</p>{% endfor %}
+</section>
+
+<section class="card">
+  <h2>Extra competitors you want watched <span class="muted">(optional)</span></h2>
   <form method="post" action="{{ url_for('research_page') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label>Instagram handles, one per line or separated by commas (up to 15)

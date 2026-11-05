@@ -13,7 +13,8 @@ from statistics import mean
 
 from app import claude, goals, planner, publisher
 from app.brands import Brand
-from app.team import AGENTS, competitors, latest, post_brief, say, skill
+from app.db import get_state, set_state
+from app.team import AGENTS, competitors, latest, post_brief, say, skill, timed
 
 log = logging.getLogger(__name__)
 POSTS_PER_COMPETITOR = 15
@@ -58,9 +59,61 @@ def scan_competitor(brand: Brand, handle: str) -> dict:
             "top_posts": sorted(posts, key=lambda p: p["engagement"], reverse=True)[:4], "posts": posts}
 
 
+FIND_SCHEMA = {
+    "type": "object",
+    "properties": {"competitors": {"type": "array", "items": {"type": "object", "properties": {
+        "name": {"type": "string"},
+        "instagram": {"type": "string", "description": "Instagram username without @, or empty if not found"},
+        "website": {"type": "string"},
+        "price_note": {"type": "string", "description": "Typical pack price / price per piece, with source"},
+        "why": {"type": "string", "description": "Why it competes with us (same products, price, audience)"}},
+        "required": ["name", "instagram", "website", "price_note", "why"], "additionalProperties": False}}},
+    "required": ["competitors"], "additionalProperties": False,
+}
+REFIND_AFTER_DAYS = 30
+
+
+def found_competitors(brand: Brand) -> dict:
+    """Competitors the Researcher found by itself: {"found_at": date, "list": [...]}."""
+    return json.loads(get_state(brand.slug, "team:competitors_auto") or '{"found_at": null, "list": []}')
+
+
+@timed("researcher", "Finding competitors")
+def find_competitors(brand: Brand, client=None) -> dict:
+    """Search the web for the brands we really compete with (same products, similar prices, sold on Instagram)."""
+    client = client or claude.client_for(brand)
+    prompt = (f"Find the 8–10 brands that compete most directly with {brand.name} "
+              f"({brand.config['brand'].get('website', '')}): Indian D2C brands selling men's innerwear (briefs, "
+              f"trunks, boxers, vests), especially multi-packs at similar prices, that advertise on Instagram. Our "
+              f"products:\n{_catalogue(brand)}\n\nFor each: brand name, its official Instagram username (check it "
+              "on the brand's own website or a reliable page — don't guess), website, typical pack price and price "
+              "per piece (with the source), and why it competes with us. Include both big names and fast-growing "
+              "small ones.")
+    notes, cost, searches = claude.research(client, _system(brand), prompt, max_searches=10)
+    data, ask_cost, _ = claude.ask(client, _system(brand), [{"role": "user", "content":
+                                   f"Turn these findings into the list. Leave instagram empty when the notes don't "
+                                   f"give a confirmed username.\n\n{notes}"}], FIND_SCHEMA, effort="low")
+    for c in data["competitors"]:
+        c["instagram"] = c["instagram"].strip().lstrip("@").split("instagram.com/")[-1].split("?")[0].strip("/").lower()
+    result = {"found_at": datetime.now().date().isoformat(), "list": data["competitors"][:12]}
+    set_state(brand.slug, "team:competitors_auto", json.dumps(result, ensure_ascii=False))
+    log.info("Researcher found %d competitors by itself (%d searches)", len(result["list"]), searches)
+    return {**result, "cost_usd": cost + ask_cost,
+            "summary": f"Found {len(result['list'])} competitors: " + ", ".join(c["name"] for c in result["list"])}
+
+
+def watch_list(brand: Brand) -> list[str]:
+    """Instagram handles to read: yours first, then the ones the Researcher found (max 12)."""
+    handles = list(competitors(brand))
+    for c in found_competitors(brand)["list"]:
+        if c.get("instagram") and c["instagram"] not in handles:
+            handles.append(c["instagram"])
+    return handles[:12]
+
+
 def scan_all(brand: Brand) -> tuple[list[dict], list[str]]:
     found, problems = [], []
-    for handle in competitors(brand):
+    for handle in watch_list(brand):
         try:
             found.append(scan_competitor(brand, handle))
         except publisher.PublishError as e:
@@ -101,12 +154,24 @@ def _catalogue(brand: Brand) -> str:
                      f", {s['colourways']} colours)" for s in planner.catalog_styles(brand)[:25]) or "(no products synced)"
 
 
+@timed("researcher", "Market research")
 def run(brand: Brand, client=None, web: bool = True) -> dict:
     """Write this week's market brief. Returns the stored brief."""
     client = client or claude.client_for(brand)
+    cost, extra_problems = 0.0, []
+    known = found_competitors(brand)
+    stale = not known["found_at"] or \
+        (datetime.now().date() - datetime.fromisoformat(known["found_at"]).date()).days >= REFIND_AFTER_DAYS
+    if web and stale:  # find competitors by itself (monthly), so it never waits for you to list them
+        try:
+            cost += find_competitors(brand, client)["cost_usd"]
+        except claude.ClaudeError as e:
+            extra_problems.append(f"finding competitors: {e}")
+    rivals = found_competitors(brand)["list"]
     scans, problems = scan_all(brand)
+    problems += extra_problems
     today = datetime.now(timezone(timedelta(hours=5, minutes=30))).strftime("%A %d %B %Y")
-    web_notes, cost, searches = "", 0.0, 0
+    web_notes, searches = "", 0
     if web:
         prompt = (f"Today is {today}. Research, for {brand.name} (men's innerwear packs sold online in India, "
                   f"mostly through Instagram and Facebook ads):\n"
@@ -116,16 +181,23 @@ def run(brand: Brand, client=None, web: bool = True) -> dict:
                   "3. What customers praise or complain about in men's innerwear (comfort, elastic, fabric, fit, "
                   "value).\n"
                   "4. Any recent change to Meta/Instagram that affects small brands (reels reach, ads, policies).\n"
+                  "5. Our competitors right now — "
+                  + (", ".join(c["name"] for c in rivals) if rivals else "the main Indian men's innerwear D2C brands")
+                  + ": their current offers and pack prices, new launches, the ad angles and content themes they "
+                  "push (Meta Ad Library, their Instagram and websites), and customer complaints about them.\n"
                   "Search the web. Give short findings, each with its source link. Say when something is uncertain.")
         try:
-            web_notes, cost, searches = claude.research(client, _system(brand), prompt)
+            web_notes, web_cost, searches = claude.research(client, _system(brand), prompt, max_searches=12)
+            cost += web_cost
         except claude.ClaudeError as e:
             web_notes = f"(web research failed: {e})"
     comp_text = json.dumps([{k: v for k, v in c.items() if k != "posts"} for c in scans], ensure_ascii=False)[:30000]
     user = (f"Today is {today}. Write this week's market brief for the team.\n\n"
             f"OUR GOALS AND LIMITS:\n{goals.summary_for_agents(brand)}\n\n"
             f"OUR PRODUCTS (from Shopify):\n{_catalogue(brand)}\n\n"
-            f"COMPETITORS (official Instagram data; 'vs_avg' = engagement ÷ that account's average; engagement = "
+            f"COMPETITORS WE FOUND (name, Instagram, price): "
+            f"{json.dumps(rivals, ensure_ascii=False)[:6000] if rivals else '(none yet)'}\n\n"
+            f"COMPETITORS' INSTAGRAM POSTS (official Instagram data; 'vs_avg' = engagement ÷ that account's average; engagement = "
             f"likes + 2×comments):\n{comp_text if scans else '(none set or none readable)'}\n"
             + (f"Couldn't read: {'; '.join(problems)}\n" if problems else "")
             + f"\nWEB RESEARCH NOTES:\n{web_notes or '(not run)'}\n\n"
@@ -176,6 +248,7 @@ REVIEW_SCHEMA = {
 }
 
 
+@timed("researcher", "Reviewing the Planner's plan")
 def review_plan(brand: Brand, rows: list[dict], client=None) -> tuple[dict, float]:
     """One critique of the Planner's week from the market's point of view (the Planner revises at most once)."""
     client = client or claude.client_for(brand)

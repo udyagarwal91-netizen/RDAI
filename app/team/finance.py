@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from app import claude, goals, meta_ads, sales
 from app.brands import Brand
 from app.db import connect, get_state, set_state
-from app.team import AGENTS, post_brief, say, skill
+from app.team import AGENTS, post_brief, say, skill, timed
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +138,7 @@ def alerts(brand: Brand, m: dict) -> list[str]:
     return sent
 
 
+@timed("finance", "Morning numbers check")
 def daily_tick(brand: Brand) -> dict:
     m = measure(brand)
     m["alerts"] = alerts(brand, m) if m["ads"]["spend"] or m["sales"]["orders"] else []
@@ -156,6 +157,7 @@ BRIEF_SCHEMA = {
 }
 
 
+@timed("finance", "Weekly money brief")
 def weekly_brief(brand: Brand, client=None) -> dict | None:
     m = measure(brand)
     if not (m["ads"]["spend"] or m["sales"]["orders"]):

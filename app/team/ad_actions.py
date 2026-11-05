@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from app import goals, meta_ads, publisher
 from app.brands import Brand
 from app.db import get_state
-from app.team import proposals
+from app.team import proposals, timed
 
 log = logging.getLogger(__name__)
 PIXEL_EVENTS = {"checkout_14d": ("InitiateCheckout", 14), "cart_14d": ("AddToCart", 14),
@@ -91,6 +91,7 @@ def _paise(rupees: float) -> str:
     return str(int(round(float(rupees) * 100)))  # Meta wants budgets in paise
 
 
+@timed("smo", "Making an approved ad change")
 def execute(brand: Brand, pid: int) -> str:
     """Do one approved proposal. Returns a plain-English result; raises ActionError on failure."""
     p = proposals.get(brand, pid)
