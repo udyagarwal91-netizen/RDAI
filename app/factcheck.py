@@ -8,7 +8,8 @@ import re
 
 from app.brands import Brand
 
-_PRICE_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", re.IGNORECASE)
+# A price: ₹ / Rs / INR as a word (not the "rs" inside "customers"), then a number that starts with a digit.
+_PRICE_RE = re.compile(r"(?:₹|\b(?:rs|inr)\b\.?)\s*(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
 _PACK_RE = re.compile(r"\b(\d+)\s*-?\s*(?:pcs?|pieces?|pk)\b|pack\s+of\s+(\d+)|\b(\d+)\s*-?\s*pack\b", re.IGNORECASE)
 _PERCENT_RE = re.compile(r"\b\d{1,2}\s*%")
 
@@ -16,7 +17,10 @@ _PERCENT_RE = re.compile(r"\b\d{1,2}\s*%")
 def check_text(text: str, brand: Brand, allowed_prices: set[float], pack_sizes: set[int] | None = None) -> list[str]:
     problems = []
     for m in _PRICE_RE.finditer(text):
-        value = float(m.group(1).replace(",", ""))
+        try:
+            value = float(m.group(1).replace(",", "").rstrip("."))
+        except ValueError:
+            continue  # not really a number
         if value not in allowed_prices:
             problems.append(f"mentions ₹{value:g}, which isn't a Shopify price for this product")
     if pack_sizes:

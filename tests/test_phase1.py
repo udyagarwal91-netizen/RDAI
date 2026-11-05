@@ -222,3 +222,11 @@ def test_zero_price_is_never_used_and_is_reported(brand, monkeypatch):
     style = planner.catalog_styles(brand)[0]
     assert style["price_from"] == 299 and 0 not in style["all_prices"]
     assert "price ₹0" in style["issues"][0]
+
+
+def test_price_check_ignores_rs_inside_words(brand):
+    from app import factcheck
+    text = "Our customers, brothers and users love offers. Customers 3 pack. Rs. 249 and INR 1,299 and ₹73, ₹."
+    problems = factcheck.check_text(text, brand, {249.0}, None)
+    assert problems == ["mentions ₹1299, which isn't a Shopify price for this product",
+                        "mentions ₹73, which isn't a Shopify price for this product"]
