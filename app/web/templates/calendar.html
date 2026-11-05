@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block body %}
+<style>
+  .cal { width:100%; border-collapse:collapse; table-layout:fixed; min-width:700px; }
+  .cal th { font-size:12px; color:var(--muted); font-weight:600; padding:6px 4px; text-align:left; }
+  .cal td { vertical-align:top; border:1px solid var(--line); height:96px; padding:4px; background:var(--card); }
+  .cal td.out { background:var(--soft); opacity:.55; } .cal td.today { outline:2px solid var(--brand); outline-offset:-2px; }
+  .cal .d { font-size:12px; color:var(--muted); font-weight:600; }
+  .chip { display:block; font-size:11.5px; line-height:1.3; padding:3px 5px; border-radius:6px; margin-top:3px;
+          text-decoration:none; color:var(--ink); background:var(--soft); border-left:3px solid var(--line);
+          overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .chip.dim { opacity:.35; }
+  .st-idea { border-left-color:#9aa3ab; } .st-approved { border-left-color:#3b82f6; } .st-ready { border-left-color:#d9a400; }
+  .st-making { border-left-color:#a855f7; } .st-scheduled { border-left-color:var(--ok); } .st-posted { border-left-color:#0f766e; }
+  .st-skipped { border-left-color:var(--err); text-decoration:line-through; }
+  .badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .badge { font-size:12.5px; padding:3px 9px; border-radius:99px; background:var(--soft); text-decoration:none; color:var(--ink); }
+  .badge.on { background:var(--brand); color:var(--brand-ink); }
+  .item { border-top:1px solid var(--line); padding:14px 0; scroll-margin-top:20px; } .item:target { background:var(--warnbg); }
+  .grid2 { display:grid; grid-template-columns:120px 1fr; gap:4px 12px; font-size:14px; margin-top:8px; }
+  .grid2 .k { color:var(--muted); }
+  @media (max-width:640px) { .grid2 { grid-template-columns:1fr; } .grid2 .k { margin-top:6px; } }
+</style>
+
+<div class="row-head">
+  <h1>📅 {{ first.strftime("%B %Y") }}</h1>
+  <div class="actions" style="margin:0">
+    <a class="btn secondary" href="{{ url_for('calendar_page', m=prev_m) }}">← {{ prev_m }}</a>
+    <a class="btn secondary" href="{{ url_for('calendar_page', m=next_m) }}">{{ next_m }} →</a>
+  </div>
+</div>
+<p class="muted">The 🗺 Planner's content calendar. It plans each month on the 25th, the weekly team meeting adjusts the
+  coming week, and the 🎨 Creator makes each item the day before it's due — you approve every draft before it posts.
+  Stories are planned now; making them comes in the next step (post them by hand meanwhile).</p>
+{% if brand_error %}<div class="flash error">{{ brand_error }}</div>{% endif %}
+{% include "_jobs.html" %}
+
+<div class="actions">
+  {% for which, label in [("next", "Plan next month"), ("now", "Plan the next 30 days")] %}
+  <form method="post" action="{{ url_for('run_action', action='month_plan') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="which" value="{{ which }}">
+    <input type="hidden" name="back" value="{{ url_for('calendar_page', m=first.strftime('%Y-%m')) }}">
+    <button type="submit" class="{{ 'secondary' if which == 'now' }}" {% if any_running %}disabled{% endif %}>{{ label }}</button></form>
+  {% endfor %}
+  <span class="muted">2–4 minutes, about ₹30–60. Replaces only items that are still ideas.</span>
+</div>
+
+{% if data %}
+{% if pillars or summary %}
+<section class="card">
+  {% if summary %}<p><b>Plan:</b> {{ summary.summary }}</p>{% endif %}
+  {% if pillars %}<h3>Content pillars <span class="muted">(chosen by the Planner)</span></h3>
+    {% for p in pillars %}<div><b>{{ p.name }}</b> <span class="muted">— {{ p.why }}</span></div>{% endfor %}{% endif %}
+</section>
+{% endif %}
+
+<section class="card">
+  {% macro filt(key, values) %}
+    <div class="badges"><span class="muted" style="width:56px">{{ key|title }}</span>
+      <a class="badge {{ 'on' if not filters[key] }}" href="{{ url_for('calendar_page', m=first.strftime('%Y-%m'), **dict(filters, **{key: ''})) }}">All</a>
+      {% for v, n in values %}<a class="badge {{ 'on' if filters[key] == v }}" href="{{ url_for('calendar_page', m=first.strftime('%Y-%m'), **dict(filters, **{key: v})) }}">{{ v }} · {{ n }}</a>{% endfor %}
+    </div>
+  {% endmacro %}
+  {{ filt("type", data.by_type) }}{{ filt("pillar", data.by_pillar) }}{{ filt("goal", data.by_goal) }}{{ filt("status", data.by_status) }}
+  {% if data.boosts %}<p class="muted" style="margin-top:8px">💸 {{ data.boosts|length }} item(s) suggested for boosting — boosts always need your ✅ on the Ads page.</p>{% endif %}
+</section>
+
+<section class="card scroll">
+  <table class="cal">
+    <tr>{% for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}<th>{{ d }}</th>{% endfor %}</tr>
+    {% for week in data.weeks %}<tr>
+      {% for cell in week %}
+      <td class="{{ 'out' if not cell.in_month }} {{ 'today' if cell.day == today }}"><div class="d">{{ cell.day.day }}</div>
+        {% for it in cell["items"] %}
+        <a class="chip st-{{ it.status_key }} {{ 'dim' if it.id not in shown_ids }}" href="#item-{{ it.id }}" title="{{ it.hook }}">
+          {{ {"Reel": "🎬", "Story": "⭕", "Post": "🖼"}[it.type] }} {{ it.when.strftime("%H:%M") }} {{ it.hook }}</a>
+        {% endfor %}
+      </td>
+      {% endfor %}</tr>{% endfor %}
+  </table>
+  <p class="muted" style="margin-top:8px">Colours: grey idea · blue idea approved · yellow ready for your OK · purple being made · green scheduled · teal posted · red skipped.</p>
+</section>
+
+<section class="card">
+  <h2>Details <span class="muted">({{ shown|length }} item{{ "s" if shown|length != 1 }})</span></h2>
+  {% for it in shown %}
+  <div class="item" id="item-{{ it.id }}">
+    <div class="row-head"><b>{{ it.when.strftime("%a %d %b, %I:%M %p") }} · {{ it.format_label }}</b>
+      <span class="pill soon">{{ it.status_label }}</span></div>
+    <div style="font-size:16px; margin-top:6px"><b>“{{ it.hook }}”</b></div>
+    <div class="grid2">
+      {% if it.products %}<span class="k">Product</span><span>{% for p in it.products %}{{ p.title }}{% if p.pack_size %} ({{ p.pack_size }}-pc){% endif %} — <b>{{ p.price }}</b>{% if not loop.last %}<br>{% endif %}{% endfor %}</span>{% endif %}
+      <span class="k">Idea</span><span>{{ it.idea }}</span>
+      {% if it.pillar %}<span class="k">Pillar · goal</span><span>{{ it.pillar }} · {{ it.goal or "—" }}</span>{% endif %}
+      {% if it.tagline %}<span class="k">Tagline</span><span>{{ it.tagline }}</span>{% endif %}
+      {% if it.cta %}<span class="k">Call to action</span><span>{{ it.cta }}</span>{% endif %}
+      {% if it.sticker %}<span class="k">Sticker</span><span>🏷 {{ it.sticker }} <span class="muted">(add by hand in Instagram)</span></span>{% endif %}
+      {% if it.direction %}<span class="k">Creative direction</span><span>{{ it.direction }}</span>{% endif %}
+      {% if it.boost %}<span class="k">Boost</span><span>💸 suggested, ₹{{ it.boost_budget|round|int }}/day</span>{% endif %}
+      {% if it.why %}<span class="k">Why</span><span class="muted">{{ it.why }}</span>{% endif %}
+      {% if it.caption %}<span class="k">Caption</span><span class="caption" style="margin:0">{{ it.caption }}</span>{% endif %}
+    </div>
+    {% for w in it.warnings %}<div class="warn-line">⚠️ {{ w }}</div>{% endfor %}
+    {% set back = url_for('calendar_page', m=first.strftime('%Y-%m'), **filters) %}
+    {% if it.status == "planned" %}
+    <div class="actions">
+      {% if not it.idea_ok %}<form method="post" action="{{ url_for('calendar_item', plan_id=it.id, action='approve') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ back }}">
+        <button type="submit">✅ Approve idea</button></form>{% endif %}
+      {% if it.type != "Story" %}<form method="post" action="{{ url_for('calendar_item', plan_id=it.id, action='make') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ back }}">
+        <button type="submit" class="secondary" {% if any_running %}disabled{% endif %}>🛠 Make it now</button></form>{% endif %}
+      <form method="post" action="{{ url_for('calendar_item', plan_id=it.id, action='skip') }}" onsubmit="return confirm('Skip this item?')">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ back }}">
+        <button type="submit" class="link">skip</button></form>
+    </div>
+    <details><summary>🔁 Ask the Planner to redo it</summary>
+      <form method="post" action="{{ url_for('calendar_item', plan_id=it.id, action='redo') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ back }}">
+        <input type="text" name="note" placeholder="What should change? e.g. funnier hook, focus on the gym vest">
+        <div class="actions"><button type="submit" class="secondary" {% if any_running %}disabled{% endif %}>Redo</button></div></form>
+    </details>
+    <details><summary>✏️ Edit it yourself</summary>
+      <form method="post" action="{{ url_for('calendar_item', plan_id=it.id, action='edit') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ back }}">
+        <label>Hook <input type="text" name="hook" value="{{ it.hook }}"></label>
+        <label>Idea <textarea name="idea">{{ it.idea }}</textarea></label>
+        <div class="two"><label>Tagline <input type="text" name="tagline" value="{{ it.tagline or '' }}"></label>
+          <label>Call to action <input type="text" name="cta" value="{{ it.cta or '' }}"></label></div>
+        {% if it.type == "Story" %}<label>Sticker <input type="text" name="sticker" value="{{ it.sticker or '' }}"></label>{% endif %}
+        <label>Creative direction <textarea name="direction">{{ it.direction or '' }}</textarea></label>
+        <div class="actions"><button type="submit">Save</button></div></form>
+    </details>
+    {% elif it.draft %}
+    <p><a href="{{ url_for('drafts_page') }}">See draft #{{ it.draft.id }} on the Drafts page →</a></p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="muted">Nothing planned for this month{% if filters.values()|select|list %} with these filters{% endif %}. Press <b>Plan next month</b> or <b>Plan the next 30 days</b>.</p>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

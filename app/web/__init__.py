@@ -206,6 +206,8 @@ def create_app() -> Flask:
             kwargs = {"style_id": request.form.get("style_id", ""), "note": request.form.get("note", "")[:300]}
         elif action == "regen":
             kwargs = {"draft_id": int(request.form.get("draft_id", "0") or 0)}
+        elif action == "month_plan":
+            kwargs = {"which": "now" if request.form.get("which") == "now" else "next"}
         if jobs.start(slug, action, **kwargs):
             flash("Started — this page updates by itself when it's done.", "ok")
         else:

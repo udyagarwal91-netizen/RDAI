@@ -298,7 +298,8 @@ def due_plan_rows(brand: Brand, days: int = 7, limit: int = 10) -> list[dict]:
     now = _now(brand)
     with connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM content_plan WHERE brand = ? AND status = 'planned' AND scheduled_for >= ? "
+            "SELECT * FROM content_plan WHERE brand = ? AND status = 'planned' AND format != 'story' "
+            "AND scheduled_for >= ? "
             "AND scheduled_for < ? ORDER BY scheduled_for LIMIT ?",
             (brand.slug, now.isoformat(), (now + timedelta(days=days)).isoformat(), limit)).fetchall()
     return [dict(r) for r in rows]

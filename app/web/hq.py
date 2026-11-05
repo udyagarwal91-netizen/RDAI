@@ -10,6 +10,7 @@ import logging
 import os
 import socket
 import threading
+from datetime import timedelta
 
 from flask import Response, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 
@@ -194,6 +195,82 @@ def register(app, login_required, current_slug, load):
         else:
             flash("Another ad change is running. Try again in a minute.", "warn")
         return redirect(url_for("campaigns_page"))
+
+    # ---------- Content Calendar ----------
+
+    @app.route("/calendar")
+    @login_required
+    def calendar_page():
+        from datetime import date
+
+        from app import content_calendar, jobs, planner
+        from app.db import get_state
+        brand, brand_error = load(current_slug())
+        today = date.today()
+        try:
+            year, month_no = map(int, (request.args.get("m") or f"{today:%Y-%m}").split("-"))
+            first = date(year, month_no, 1)
+        except ValueError:
+            first = today.replace(day=1)
+        prev_m = (first - timedelta(days=1)).strftime("%Y-%m")
+        next_m = content_calendar.next_month_start(first).strftime("%Y-%m")
+        data = content_calendar.month(brand, first.year, first.month) if brand else None
+        filters = {k: request.args.get(k, "") for k in ("type", "pillar", "goal", "status")}
+        shown = []
+        if data:
+            for it in data["items"]:
+                if filters["type"] and it["type"] != filters["type"]:
+                    continue
+                if filters["pillar"] and (it.get("pillar") or "—") != filters["pillar"]:
+                    continue
+                if filters["goal"] and (it.get("goal") or "—") != filters["goal"]:
+                    continue
+                if filters["status"] and it["status_label"].split(" · ")[0] != filters["status"]:
+                    continue
+                shown.append(it)
+        shown_ids = {it["id"] for it in shown}
+        job_status = jobs.status(brand.slug) if brand else {}
+        return render_template("calendar.html", brand=brand, brand_error=brand_error, data=data, first=first,
+                               prev_m=prev_m, next_m=next_m, filters=filters, shown=shown, shown_ids=shown_ids,
+                               pillars=planner.current_pillars(brand) if brand else [],
+                               summary=json.loads(get_state(brand.slug, "calendar:summary") or "null") if brand else None,
+                               today=today, jobs=job_status,
+                               any_running=any(j["state"] == "running" for j in job_status.values()))
+
+    @app.route("/calendar/item/<int:plan_id>/<action>", methods=["POST"])
+    @login_required
+    def calendar_item(plan_id, action):
+        from app import content_calendar, jobs
+        brand, _ = load(current_slug())
+        if not brand:
+            abort(404)
+        back = (request.form.get("back") or url_for("calendar_page")) + f"#item-{plan_id}"
+        if not back.startswith("/") or back.startswith("//"):
+            back = url_for("calendar_page")
+        try:
+            if action == "approve":
+                content_calendar.approve_idea(brand, plan_id)
+                flash("Idea approved — the Creator will make it on the day before it's due.", "ok")
+            elif action == "skip":
+                content_calendar.skip(brand, plan_id)
+                flash("Skipped — it won't be made or posted.", "ok")
+            elif action == "edit":
+                warnings = content_calendar.edit(brand, plan_id, request.form)
+                flash("Saved." + (" Please check: " + "; ".join(warnings) if warnings else ""),
+                      "warn" if warnings else "ok")
+            elif action == "redo":
+                ok = jobs.start(brand.slug, "calendar_redo", plan_id=plan_id, note=request.form.get("note", "")[:400])
+                flash("The Planner is rewriting it (about 20 seconds)." if ok else "Already rewriting one — wait a moment.",
+                      "ok" if ok else "warn")
+            elif action == "make":
+                ok = jobs.start(brand.slug, "draft_item", plan_id=plan_id)
+                flash("The Creator is making it now — it arrives on Telegram and the Drafts page." if ok else
+                      "Already making one — wait a moment.", "ok" if ok else "warn")
+            else:
+                abort(404)
+        except content_calendar.CalendarError as e:
+            flash(str(e), "error")
+        return redirect(back)
 
     # ---------- Phone access on home Wi-Fi ----------
 

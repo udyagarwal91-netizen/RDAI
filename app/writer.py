@@ -161,6 +161,14 @@ The product photos follow, numbered from 0."""}]
     for i, url in enumerate(photos):
         content += [{"type": "text", "text": f"Photo {i}:"},
                     {"type": "image", "source": {"type": "url", "url": media.sized_url(url, 600)}}]
+    plan_notes = json.loads(post["notes"]) if isinstance(post.get("notes"), str) and post["notes"] else {}
+    extras = [f"{label}: {plan_notes[k]}" for k, label in (("tagline", "Tagline for the visual (use it as the "
+                                                             "headline if it fits)"), ("cta", "Call to action"),
+                                                            ("direction", "Creative direction from the Planner"),
+                                                            ("goal", "Goal of this post"), ("pillar", "Content pillar"))
+              if plan_notes.get(k)]
+    if extras:
+        content.append({"type": "text", "text": "From the content calendar:\n" + "\n".join(extras)})
     guidance = team_guidance(brand)
     if guidance:
         content.append({"type": "text", "text": guidance})

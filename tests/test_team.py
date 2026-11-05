@@ -235,7 +235,7 @@ def test_work_log_records_failures_and_stats(crew):
 def test_planner_and_creator_work_is_logged(crew):
     planner.make_plan(crew.brand, client=crew.claude)
     entry = team.work_log(crew.brand, "planner")[0]
-    assert entry["task"] == "Weekly content plan" and "posts planned" in entry["result"]
+    assert entry["task"] == "Weekly content plan" and "items planned" in entry["result"]
 
 
 def test_agent_pages(client):

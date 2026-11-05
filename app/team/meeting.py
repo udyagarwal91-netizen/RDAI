@@ -69,7 +69,11 @@ def run(slug: str) -> str:
     except Exception as e:  # noqa: BLE001
         notes.append(_skip("manager", e))
 
-    result = planner.make_plan(brand, note=direction_note)
+    from datetime import date, timedelta
+
+    from app import content_calendar
+    context = content_calendar.week_context(brand, date.today() + timedelta(days=1))
+    result = planner.make_plan(brand, note=direction_note, context=context)
     cost += result["cost_usd"]
     rows = planner.upcoming_plan(brand)
     try:
@@ -77,7 +81,8 @@ def run(slug: str) -> str:
         cost += review_cost
         if review["verdict"] == "revise" and review["revision_request"].strip():
             result = planner.make_plan(brand, note=(direction_note + "\n\nThe Market Researcher reviewed your first "
-                                                    "version and asks: " + review["revision_request"]).strip())
+                                                    "version and asks: " + review["revision_request"]).strip(),
+                                       context=context)
             cost += result["cost_usd"]
             rows = planner.upcoming_plan(brand)
             notes.append("plan revised after the Researcher's review")

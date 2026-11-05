@@ -132,6 +132,14 @@ To run without touching the real `.env`/data, set `ENV_FILE`, `DATA_DIR`, `LOGS_
   `producer.make_draft` wrap `_make_plan`/`_make_draft`. Team page shows six agent cards; `/team/agent/<agent>` shows
   status, 7/30-day time and cost, time by task, work log and the agent's output. Researcher finds competitors itself
   monthly (`find_competitors` → `app_state team:competitors_auto`), `watch_list` = owner's handles + found ones.
+- Content Calendar (`app/content_calendar.py`, `/calendar`): `planner.make_plan(days=…)` plans any length; ≥21 days
+  = month (timer 25th → `jobs.month_plan` next month; button "next 30 days"). Plans include Stories (`format='story'`,
+  story slots from `schedule.story_times` default 10:00/20:00; NOT drafted yet — `due_plan_rows` skips them), pillars
+  chosen by the Planner (`app_state calendar:pillars`, reused by weekly plans), and per-item extras in
+  `content_plan.notes` JSON (pillar, goal, tagline, cta, direction, boost/boost_budget, story_type, sticker, idea_ok,
+  edited_by_owner). A plan replaces only `planned` rows inside its own period. The weekly meeting passes
+  `week_context` so it adjusts the month instead of starting over. Writer receives tagline/cta/direction. Item
+  actions: approve idea, edit (factchecked), redo (`jobs.calendar_redo`), skip, make now (`jobs.draft_item`).
 - Money (Phases D/E): `app/meta_ads.py` reads ONLY the brand's ad account (`app_state meta:ad_account`, auto-picked
   by exact name match in `discover`, also from the Meta key test) → `ads_daily` + `meta:structure` (budgets in paise
   → ₹). `app/sales.py` (needs read_orders; funnel via `shopifyqlQuery` needs read_reports) → `sales_daily`.

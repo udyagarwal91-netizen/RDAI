@@ -225,6 +225,59 @@ def publish_tick(slug: str) -> None:
         log.exception("Posting check failed")
 
 
+def month_plan(slug: str, which: str = "next") -> str:
+    """The Planner's Content Calendar: next month (timer, 25th) or the next 30 days from tomorrow (button)."""
+    from app import content_calendar
+    brand = load_brand(slug)
+    prepare_for_planning(slug)
+    today = datetime.now(timezone(timedelta(hours=5, minutes=30))).date()
+    if which == "next":
+        start = content_calendar.next_month_start(today)
+        days = content_calendar.month_days(start)
+    else:
+        start, days = today + timedelta(days=1), 30
+    direction = ""
+    from app.team import latest
+    d = latest(brand, "direction")
+    if d:
+        direction = d["data"].get("plan_instructions", "")
+    result = planner.make_plan(brand, start=start, note=direction, days=days)
+    rows = planner.upcoming_plan(brand)
+    try:
+        telegram.send_message(brand, telegram.format_plan(brand, result["summary"],
+                                                          [r for r in rows if r["when"].date() >= start],
+                                                          result["cost_usd"]))
+    except telegram.TelegramError as e:
+        log.warning("Calendar not sent to Telegram: %s", e)
+    kinds = {}
+    for r in result["rows"]:
+        k = {"gemini_reel": "reels", "story": "stories"}.get(r["format"], "posts")
+        kinds[k] = kinds.get(k, 0) + 1
+    return (f"Content calendar made for {start:%d %b} – {start + timedelta(days=days - 1):%d %b}: "
+            + ", ".join(f"{n} {k}" for k, n in kinds.items()) + f". Cost about US${result['cost_usd']:.2f}.")
+
+
+def calendar_redo(slug: str, plan_id: int, note: str = "") -> str:
+    from app import content_calendar
+    r = content_calendar.redo(load_brand(slug), plan_id, note)
+    return f"Redone: “{r['hook']}”."
+
+
+def draft_item(slug: str, plan_id: int) -> str:
+    """Make the draft for one calendar item now (instead of waiting for the morning)."""
+    from app.db import connect
+    brand = load_brand(slug)
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM content_plan WHERE brand = ? AND id = ?", (slug, plan_id)).fetchone()
+    if not row or row["status"] != "planned":
+        return "That item already has a draft (see the Drafts page)."
+    if row["format"] == "story":
+        return "Stories are made in the next step of the build — for now, post this one by hand."
+    draft_id = producer.make_draft(brand, dict(row))
+    d = producer.get_draft(brand, draft_id)
+    return f"Made draft #{draft_id}{_send(brand, d)}. Cost about US${d['cost_usd']:.2f}."
+
+
 def team_week(slug: str) -> str:
     """The weekly team meeting: research → results → manager's direction → plan → review → campaign plan."""
     from app.team import meeting
@@ -293,7 +346,8 @@ def money_tick(slug: str) -> None:
 ACTIONS = {"sync": sync, "plan": plan, "send_plan": send_plan, "update": update,
            "drafts": drafts, "image": image, "reel": reel, "regen": regen, "pause": pause, "resume": resume, "stats": stats,
            "team_week": team_week, "research": research, "direction": direction, "team_report": team_report,
-           "money": money, "ad_action": ad_action}
+           "money": money, "ad_action": ad_action, "month_plan": month_plan, "calendar_redo": calendar_redo,
+           "draft_item": draft_item}
 
 
 # ---------------------------------------------------------------- background running
@@ -385,6 +439,9 @@ def reload_schedule() -> None:
                            id=f"{slug}:collect")
         _scheduler.add_job(start, CronTrigger(day_of_week="mon", hour=9, minute=5, timezone=tz), args=[slug, "stats"],
                            id=f"{slug}:stats")
+        # The 25th of every month: the Content Calendar for next month.
+        _scheduler.add_job(start, CronTrigger(day=25, hour=hh, minute=mm, timezone=tz), args=[slug, "month_plan"],
+                           kwargs={"which": "next"}, id=f"{slug}:month_plan")
         # Monday 09:30: the Manager's one-page report (goals, wins, problems, what's needed from you).
         _scheduler.add_job(start, CronTrigger(day_of_week="mon", hour=9, minute=30, timezone=tz),
                            args=[slug, "team_report"], id=f"{slug}:team_report")

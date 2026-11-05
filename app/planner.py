@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from app import calendar_india, claude, factcheck
 from app.brands import Brand
-from app.db import connect
+from app.db import connect, get_state, set_state
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 THEMES = ["product", "offer", "education", "lifestyle"]
 FORMATS = ["template_image", "carousel", "gemini_image", "gemini_reel"]
 FORMAT_LABELS = {"template_image": "🖼 Brand image", "carousel": "🗂 Carousel",
-                 "gemini_image": "✨ AI image", "gemini_reel": "🎬 Reel"}
+                 "gemini_image": "✨ AI image", "gemini_reel": "🎬 Reel", "story": "⭕ Story"}
 
 
 class PlanError(Exception):
@@ -91,11 +91,11 @@ def catalog_styles(brand: Brand) -> list[dict]:
     return styles
 
 
-def plan_slots(brand: Brand, start: date) -> list[Slot]:
-    """Every posting slot from `start` for the plan length (7 or 14 days)."""
+def plan_slots(brand: Brand, start: date, days: int | None = None) -> list[Slot]:
+    """Every feed posting slot from `start` for the plan length (default: the Brand page setting, 7 or 14 days)."""
     sched = brand.config["schedule"]
     tz = ZoneInfo(sched.get("timezone", "Asia/Kolkata"))
-    days = int(sched.get("plan_horizon_days", 7))
+    days = days or int(sched.get("plan_horizon_days", 7))
     slots = []
     for offset in range(days):
         day = start + timedelta(days=offset)
@@ -104,6 +104,24 @@ def plan_slots(brand: Brand, start: date) -> list[Slot]:
                 hh, mm = map(int, str(s["time"]).split(":"))
                 slots.append(datetime(day.year, day.month, day.day, hh, mm, tzinfo=tz))
     return [Slot(i, w) for i, w in enumerate(sorted(slots), start=1)]
+
+
+STORY_TIMES = ["10:00", "20:00"]
+STORY_TYPES = ["poll", "quiz", "question", "link", "festival", "product", "behind_the_scenes", "review"]
+GOALS = ["awareness", "engagement", "consideration", "traffic", "sales", "trust", "education"]
+
+
+def story_slots(brand: Brand, start: date, days: int) -> list[Slot]:
+    """Possible Story times (any day; the Planner decides how many Stories to use)."""
+    tz = ZoneInfo(brand.config["schedule"].get("timezone", "Asia/Kolkata"))
+    times = brand.config["schedule"].get("story_times") or STORY_TIMES
+    out = []
+    for offset in range(days):
+        day = start + timedelta(days=offset)
+        for t in times:
+            hh, mm = map(int, str(t).split(":"))
+            out.append(datetime(day.year, day.month, day.day, hh, mm, tzinfo=tz))
+    return [Slot(1000 + i, w) for i, w in enumerate(out, start=1)]
 
 
 def _split(total: int, shares: dict[str, int]) -> dict[str, int]:
@@ -115,10 +133,10 @@ def _split(total: int, shares: dict[str, int]) -> dict[str, int]:
     return counts
 
 
-def targets(brand: Brand, n_slots: int) -> tuple[dict, dict, int]:
+def targets(brand: Brand, n_slots: int, days: int | None = None) -> tuple[dict, dict, int]:
     """How many posts of each topic and format to aim for, and the reel cap."""
     mix = brand.config["content_mix"]
-    days = int(brand.config["schedule"].get("plan_horizon_days", 7))
+    days = days or int(brand.config["schedule"].get("plan_horizon_days", 7))
     reel_cap = int(mix.get("max_reels_per_week", 0)) * days // 7
     themes = _split(n_slots, mix["themes"])
     formats = _split(n_slots, mix["formats"])
@@ -194,7 +212,8 @@ def _playbook(brand: Brand) -> str:
 
 
 def user_prompt(brand: Brand, styles: list[dict], slots: list[Slot], themes: dict, formats: dict, reel_cap: int,
-                festivals: list[dict], performance: str, recent: list[str]) -> str:
+                festivals: list[dict], performance: str, recent: list[str], stories: list[Slot] | None = None,
+                pillars: list[dict] | None = None, context: str = "") -> str:
     style_lines = []
     for s in styles:
         price = f"₹{s['price_from']:g}" if s["price_from"] == s["price_to"] else f"₹{s['price_from']:g}–₹{s['price_to']:g} by size"
@@ -224,14 +243,52 @@ Recent ideas to avoid repeating:
 {recent_text}
 
 Return one entry per slot. "idea" is one sentence describing the post. "hook" is the first line people will read.
-"why" is a few words on why this fits the plan. "styles" lists the style ids shown (1–3; usually 1)."""
+"why" is a few words on why this fits the plan. "styles" lists the style ids shown (1–3; usually 1).
+For each post also give: "pillar" (one of your content pillars), "goal", "tagline" (a short line for the visual,
+max 6 words, no prices), "cta" (the call to action), "direction" (creative direction for the Creator: how the visual
+or reel should look and flow, 1–2 sentences), and "boost" (true only for a post worth putting ad money behind, with
+"boost_budget" in ₹ per day, else false and 0). Call products by their names from the product list.
+{_story_part(stories)}
+{_pillar_part(pillars)}{context}"""
 
 
-def plan_schema(styles: list[dict], slots: list[Slot]) -> dict:
+def _story_part(stories: list[Slot] | None) -> str:
+    if not stories:
+        return 'Return "stories" as an empty list.'
+    return ("STORIES: you may also plan Instagram/Facebook Stories at these times (use as many as are useful — "
+            "typically 2–4 a week; polls, quizzes, questions, link stories, festival greetings, product teasers, "
+            "behind the scenes, real reviews):\n" + "\n".join(f"{s.index}: {s.label()}" for s in stories) +
+            '\nFor each story give "story_slot", "story_type", "styles" (may be empty), "idea", "hook" (the words on '
+            'the story), "sticker" (e.g. "Poll: BRIEF / TRUNK", or empty), "pillar", "goal" and "why". Stickers are '
+            "added by hand in the Instagram app, so keep the sticker text short. Never invent reviews.")
+
+
+def _pillar_part(pillars: list[dict] | None) -> str:
+    if pillars:
+        return ("CONTENT PILLARS already set for this month (keep using them; return them unchanged in "
+                f"\"pillars\"): {json.dumps(pillars, ensure_ascii=False)}\n")
+    return ("CONTENT PILLARS: decide 4–6 content pillars for this brand right now (from the products, results, "
+            "festivals and research) and return them in \"pillars\" with a one-line reason each. Balance the plan "
+            "across them.\n")
+
+
+def plan_schema(styles: list[dict], slots: list[Slot], stories: list[Slot] | None = None) -> dict:
+    style_ids = [s["id"] for s in styles]
     return {
         "type": "object",
         "properties": {
             "summary": {"type": "string"},
+            "pillars": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "why": {"type": "string"}},
+                "required": ["name", "why"], "additionalProperties": False}},
+            "stories": {"type": "array", "items": {"type": "object", "properties": {
+                "story_slot": {"type": "integer", "enum": [s.index for s in stories] or [0]},
+                "story_type": {"type": "string", "enum": STORY_TYPES},
+                "styles": {"type": "array", "items": {"type": "string", "enum": style_ids}},
+                "idea": {"type": "string"}, "hook": {"type": "string"}, "sticker": {"type": "string"},
+                "pillar": {"type": "string"}, "goal": {"type": "string", "enum": GOALS}, "why": {"type": "string"}},
+                "required": ["story_slot", "story_type", "styles", "idea", "hook", "sticker", "pillar", "goal", "why"],
+                "additionalProperties": False}},
             "posts": {
                 "type": "array",
                 "items": {
@@ -240,17 +297,25 @@ def plan_schema(styles: list[dict], slots: list[Slot]) -> dict:
                         "slot": {"type": "integer", "enum": [s.index for s in slots]},
                         "theme": {"type": "string", "enum": THEMES},
                         "format": {"type": "string", "enum": FORMATS},
-                        "styles": {"type": "array", "items": {"type": "string", "enum": [s["id"] for s in styles]}},
+                        "styles": {"type": "array", "items": {"type": "string", "enum": style_ids}},
                         "idea": {"type": "string"},
                         "hook": {"type": "string"},
                         "why": {"type": "string"},
+                        "pillar": {"type": "string"},
+                        "goal": {"type": "string", "enum": GOALS},
+                        "tagline": {"type": "string"},
+                        "cta": {"type": "string"},
+                        "direction": {"type": "string"},
+                        "boost": {"type": "boolean"},
+                        "boost_budget": {"type": "number"},
                     },
-                    "required": ["slot", "theme", "format", "styles", "idea", "hook", "why"],
+                    "required": ["slot", "theme", "format", "styles", "idea", "hook", "why", "pillar", "goal",
+                                 "tagline", "cta", "direction", "boost", "boost_budget"],
                     "additionalProperties": False,
                 },
             },
         },
-        "required": ["summary", "posts"],
+        "required": ["summary", "pillars", "posts", "stories"],
         "additionalProperties": False,
     }
 
@@ -270,27 +335,39 @@ def check_post(post: dict, styles_by_id: dict, brand: Brand) -> list[str]:
 
 # ---------------------------------------------------------------- main
 
-def make_plan(brand: Brand, start: date | None = None, client=None, note: str = "") -> dict:
+def make_plan(brand: Brand, start: date | None = None, client=None, note: str = "", days: int | None = None,
+              stories: bool = True, context: str = "") -> dict:
+    """Plan `days` days from `start` (default: the Brand page plan length). A month plan is the Content Calendar."""
     from app.team import working
-    with working(brand, "planner", "Weekly content plan") as job:
-        result = _make_plan(brand, start, client, note)
-        job["result"], job["cost_usd"] = f"{len(result['rows'])} posts planned", result["cost_usd"]
+    label = "Monthly content calendar" if (days or 0) >= 21 else "Weekly content plan"
+    with working(brand, "planner", label) as job:
+        result = _make_plan(brand, start, client, note, days, stories, context)
+        job["result"], job["cost_usd"] = f"{len(result['rows'])} items planned", result["cost_usd"]
         return result
 
 
-def _make_plan(brand: Brand, start: date | None = None, client=None, note: str = "") -> dict:
+def current_pillars(brand: Brand) -> list[dict]:
+    from app.db import get_state
+    return json.loads(get_state(brand.slug, "calendar:pillars") or "[]")
+
+
+def _make_plan(brand: Brand, start: date | None = None, client=None, note: str = "", days: int | None = None,
+               with_stories: bool = True, context: str = "") -> dict:
     """Make and save the plan. Returns {"summary", "rows", "cost_usd", "model"}."""
     tz = ZoneInfo(brand.config["schedule"].get("timezone", "Asia/Kolkata"))
     start = start or (datetime.now(tz).date() + timedelta(days=1))
+    days = days or int(brand.config["schedule"].get("plan_horizon_days", 7))
     styles = catalog_styles(brand)
     if not styles:
         raise PlanError("No products to plan with yet. Press “Get products from Shopify” first "
                         "(or check that products are active and in stock).")
-    slots = plan_slots(brand, start)
+    slots = plan_slots(brand, start, days)
     if not slots:
         raise PlanError("No posting days are ticked. Choose them on Brand → Posting days.")
-    themes, formats, reel_cap = targets(brand, len(slots))
-    end = slots[-1].when.date()
+    stories = story_slots(brand, start, days) if with_stories else []
+    pillars = current_pillars(brand) if days < 21 else []  # a new month decides fresh pillars
+    themes, formats, reel_cap = targets(brand, len(slots), days)
+    end = start + timedelta(days=days - 1)
     festivals = calendar_india.upcoming(start, end, (brand.config.get("festivals") or {}).get("custom_dates"))
 
     try:
@@ -299,13 +376,16 @@ def _make_plan(brand: Brand, start: date | None = None, client=None, note: str =
         raise PlanError(str(e)) from None
 
     messages = [{"role": "user", "content": user_prompt(
-        brand, styles, slots, themes, formats, reel_cap, festivals, performance_summary(brand), recent_ideas(brand))
+        brand, styles, slots, themes, formats, reel_cap, festivals, performance_summary(brand), recent_ideas(brand),
+        stories, pillars, context)
         + (f"\n\nThe owner's request for this plan (follow it, within the rules): {note.strip()}" if note.strip() else "")}]
     styles_by_id = {s["id"]: s for s in styles}
     cost, model_used, plan = 0.0, claude.MODEL, None
     for attempt in range(2):
         try:
-            plan, call_cost, model_used = claude.ask(client, system_prompt(brand), messages, plan_schema(styles, slots))
+            plan, call_cost, model_used = claude.ask(client, system_prompt(brand), messages,
+                                                     plan_schema(styles, slots, stories),
+                                                     max_tokens=20000 if days >= 21 else 16000)
         except claude.ClaudeError as e:
             raise PlanError(str(e)) from None
         cost += call_cost
@@ -318,7 +398,12 @@ def _make_plan(brand: Brand, start: date | None = None, client=None, note: str =
     else:
         raise PlanError(f"Claude's plan didn't fit the posting slots ({problem}). Press the button again.")
 
-    rows = _save(brand, plan, slots, styles_by_id, start, reel_cap)
+    rows = _save(brand, plan, slots, styles_by_id, start, reel_cap, stories, end)
+    if plan.get("pillars"):
+        set_state(brand.slug, "calendar:pillars", json.dumps(plan["pillars"], ensure_ascii=False))
+    if days >= 21:
+        set_state(brand.slug, "calendar:summary", json.dumps({"start": start.isoformat(), "end": end.isoformat(),
+                                                              "summary": plan["summary"]}, ensure_ascii=False))
     log.info("Plan for %s: %d posts from %s, model %s, cost about US$%.3f", brand.slug, len(rows), start,
              model_used, cost)
     return {"summary": plan["summary"], "rows": rows, "cost_usd": cost, "model": model_used}
@@ -337,16 +422,20 @@ def _structure_problem(plan: dict, slots: list[Slot]) -> str | None:
     return None
 
 
-def _save(brand: Brand, plan: dict, slots: list[Slot], styles_by_id: dict, start: date, reel_cap: int) -> list[dict]:
+def _save(brand: Brand, plan: dict, slots: list[Slot], styles_by_id: dict, start: date, reel_cap: int,
+          stories: list[Slot] | None = None, end: date | None = None) -> list[dict]:
     by_slot = {s.index: s for s in slots}
     posts = sorted(plan["posts"], key=lambda p: p["slot"])
     reels = 0
-    now = datetime.now(by_slot[posts[0]["slot"]].when.tzinfo).isoformat(timespec="seconds")
+    tz = by_slot[posts[0]["slot"]].when.tzinfo
+    now = datetime.now(tz).isoformat(timespec="seconds")
+    period_end = datetime.combine((end or slots[-1].when.date()) + timedelta(days=1), datetime.min.time(), tz)
     rows = []
     with connect() as conn:
-        # A new plan replaces anything still only "planned" in the same period.
-        conn.execute("DELETE FROM content_plan WHERE brand = ? AND status = 'planned' AND scheduled_for >= ?",
-                     (brand.slug, slots[0].when.isoformat()))
+        # A new plan replaces only what is still just "planned" in the same period (the rest of the month stays).
+        conn.execute("DELETE FROM content_plan WHERE brand = ? AND status = 'planned' AND scheduled_for >= ? "
+                     "AND scheduled_for < ?", (brand.slug, datetime.combine(start, datetime.min.time(), tz).isoformat(),
+                                               period_end.isoformat()))
         for p in posts:
             notes = check_post(p, styles_by_id, brand)
             fmt = p["format"]
@@ -361,13 +450,46 @@ def _save(brand: Brand, plan: dict, slots: list[Slot], styles_by_id: dict, start
                 "scheduled_for": by_slot[p["slot"]].when.isoformat(), "theme": p["theme"], "format": fmt,
                 "product_ids": json.dumps(product_ids), "idea": p["idea"].strip(), "hook": p["hook"].strip(),
                 "notes": json.dumps({"why": p["why"].strip(), "warnings": notes,
-                                     "styles": [styles_by_id[s]["title"] for s in p["styles"]]}),
+                                     "styles": [styles_by_id[s]["title"] for s in p["styles"]],
+                                     **_extras(p)}, ensure_ascii=False),
+                "status": "planned", "created_at": now,
+            }
+            cur = conn.execute(f"INSERT INTO content_plan ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
+                               list(row.values()))
+            rows.append({**row, "id": cur.lastrowid})
+        by_story = {s.index: s for s in stories or []}
+        used = set()
+        for st in plan.get("stories") or []:
+            slot = by_story.get(st.get("story_slot"))
+            if not slot or slot.index in used:
+                continue  # unknown or double-booked story time
+            used.add(slot.index)
+            sids = [x for x in st.get("styles", []) if x in styles_by_id]
+            warnings = check_post({"styles": sids, "idea": st["idea"], "hook": st["hook"]}, styles_by_id, brand)
+            row = {
+                "brand": brand.slug, "week_start": start.isoformat(), "scheduled_for": slot.when.isoformat(),
+                "theme": "story", "format": "story",
+                "product_ids": json.dumps([pid for sid in sids for pid in styles_by_id[sid]["product_ids"][:1]]),
+                "idea": st["idea"].strip(), "hook": st["hook"].strip(),
+                "notes": json.dumps({"why": st.get("why", ""), "warnings": warnings,
+                                     "styles": [styles_by_id[s]["title"] for s in sids],
+                                     "story_type": st.get("story_type"), "sticker": st.get("sticker", ""),
+                                     "pillar": st.get("pillar", ""), "goal": st.get("goal", "")}, ensure_ascii=False),
                 "status": "planned", "created_at": now,
             }
             cur = conn.execute(f"INSERT INTO content_plan ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
                                list(row.values()))
             rows.append({**row, "id": cur.lastrowid})
     return rows
+
+
+def _extras(p: dict) -> dict:
+    """The calendar columns for one feed post (missing ones are simply left out)."""
+    out = {k: p[k] for k in ("pillar", "goal", "tagline", "cta", "direction") if p.get(k)}
+    if p.get("boost"):
+        out["boost"] = True
+        out["boost_budget"] = max(0, float(p.get("boost_budget") or 0))
+    return out
 
 
 # ---------------------------------------------------------------- reading the plan back
@@ -393,6 +515,8 @@ def upcoming_plan(brand: Brand) -> list[dict]:
                               "image": images[0] if images else None, "url": p["url"]})
         out.append({**dict(r), "when": datetime.fromisoformat(r["scheduled_for"]), "products": prods,
                     "why": notes.get("why", ""), "warnings": notes.get("warnings", []),
+                    **{k: notes.get(k) for k in ("pillar", "goal", "tagline", "cta", "direction", "boost",
+                                                  "boost_budget", "story_type", "sticker", "idea_ok")},
                     "format_label": FORMAT_LABELS.get(r["format"], r["format"])})
     return out
 

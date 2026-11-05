@@ -138,6 +138,15 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
     if summary:
         head += f"\n<i>{esc(summary)}</i>"
     blocks = [head]
+    if (last - first).days > 10:  # a month: counts here, the full calendar in the app
+        kinds = {"Reels": sum(r["format"] == "gemini_reel" for r in rows),
+                 "Posts": sum(r["format"] not in ("gemini_reel", "story") for r in rows),
+                 "Stories": sum(r["format"] == "story" for r in rows)}
+        pillars = sorted({r.get("pillar") for r in rows if r.get("pillar")})
+        blocks.append(" · ".join(f"{n} {k}" for k, n in kinds.items())
+                      + (f"\nPillars: {esc(', '.join(pillars))}" if pillars else "")
+                      + "\nThe whole month is on the <b>Calendar</b> page in the app. The next 7 days:")
+        rows = [r for r in rows if (r["when"] - first).days < 7]
     for r in rows:
         when = r["when"].strftime("%a %d %b, %I:%M %p").replace(" 0", " ")
         lines = [f"<b>{esc(when)}</b> · {esc(r['format_label'])} · {esc(r['theme'].title())}"]
@@ -145,6 +154,8 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
             pack = f" ({p['pack_size']}-pc)" if p.get("pack_size") else ""
             lines.append(f"🛍 {esc(p['title'])}{esc(pack)} — {esc(price_text(p))}")
         lines.append(f"💡 {esc(r['idea'])}")
+        if r.get("sticker"):
+            lines.append(f"🏷 Sticker (add by hand): {esc(r['sticker'])}")
         if r.get("hook"):
             lines.append(f"🪝 “{esc(r['hook'])}”")
         for w in r.get("warnings", []):
@@ -152,7 +163,7 @@ def format_plan(brand: Brand, summary: str | None, rows: list[dict], cost_usd: f
         if r["status"] != "planned":
             lines.append(f"<i>status: {esc(r['status'])}</i>")
         blocks.append("\n".join(lines))
-    footer = "Nothing is posted yet. Drafts with Approve buttons come in the next phase."
+    footer = "Nothing is posted yet — drafts arrive here each morning for your ✅."
     if cost_usd is not None:
         footer += f"\n<i>Planning cost about US${cost_usd:.2f}.</i>"
     blocks.append(footer)
