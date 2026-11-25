@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metada
 datas = [("app.py", "."), ("data/seed", "data/seed")]
 binaries = []
 # Listed by hand: app.py is run by Streamlit at runtime, so PyInstaller can't see its imports.
-hiddenimports = ["rdai", "rdai.agent", "rdai.db", "rdai.io_excel", "rdai.masters", "rdai.physical",
+hiddenimports = ["rdai", "rdai.agent", "rdai.book_sync", "rdai.db", "rdai.io_excel", "rdai.masters", "rdai.physical",
                  "rdai.production", "rdai.seed", "rdai.stock", "rdai.units", "rdai.updater", "rdai._version", "openpyxl"]
 for pkg in ("streamlit", "anthropic"):
     d, b, h = collect_all(pkg)

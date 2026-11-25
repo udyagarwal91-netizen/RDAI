@@ -164,8 +164,13 @@ if page == "Ask RDAI":
     if not ss.chat_display:
         st.caption("Try: *What is my closing stock of Colin Classic Trunk I/E today?* · *What does each stitcher "
                    "owe me?* · *Which challans are still open?* · *I received challan 91 today, help me enter it.*")
-    for role, text in ss.chat_display:
+        st.caption("📎 **Book photos:** attach photos of your inward/outward book pages with the **+** button in the chat box. "
+                   "RDAI reads them, works out what is new (new challans, goods received since the last entry) and "
+                   "shows you one Confirm box. Stock updates when you confirm.")
+    for role, text, *imgs in ss.chat_display:
         with st.chat_message(role):
+            if imgs and imgs[0]:
+                st.image(imgs[0], width=220)
             st.markdown(text)
 
     for p in ss.proposals:
@@ -190,14 +195,24 @@ if page == "Ask RDAI":
                 ss.chat_display.append(("assistant", f"Cancelled #{p['id']} - nothing saved."))
                 st.rerun()
 
-    if prompt := st.chat_input("Ask about stock, challans, stitchers..."):
-        ss.chat_display.append(("user", prompt))
+    msg = st.chat_input("Ask about stock, challans, stitchers... or attach book photos",
+                        accept_file="multiple", file_type=["jpg", "jpeg", "png", "webp"])
+    if msg:
+        prompt = msg.text or ""
+        photos = [f.getvalue() for f in msg.files]
+        shown = prompt or f"📎 {len(photos)} photo(s)"
+        ss.chat_display.append(("user", shown, photos))
         with st.chat_message("user"):
-            st.markdown(prompt)
-        with st.chat_message("assistant"), st.spinner("Checking the records..."):
+            if photos:
+                st.image(photos, width=220)
+            st.markdown(shown)
+        with st.chat_message("assistant"), st.spinner("Reading the photos and checking the records..." if photos
+                                                      else "Checking the records..."):
             try:
                 answer = agent.run_turn(conn, agent.make_client(api_key), ss.chat_history, prompt, ss.proposals,
-                                        model=model)
+                                        model=model, images=photos)
+            except agent.UnreadableImage as e:
+                answer = str(e)
             except agent.anthropic.AuthenticationError:
                 answer = "The API key was rejected. Check it on the Settings page."
             except agent.anthropic.RateLimitError:

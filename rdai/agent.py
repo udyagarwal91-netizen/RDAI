@@ -4,13 +4,16 @@ The model never calculates stock itself - every number comes from a tool that ru
 engine. Tools that would change data do not write anything: they create a *proposal*
 that the user must confirm with a button in the app (see execute_proposal).
 """
+import base64
 import datetime as dt
 import difflib
+import io
 import json
 
 import anthropic
+from PIL import Image, ImageOps
 
-from . import physical, production as prod, stock
+from . import book_sync, physical, production as prod, stock
 from .masters import find_product, list_products, normalize_size
 
 MODELS = {
@@ -48,6 +51,20 @@ After proposing, tell the user briefly what you proposed and ask them to confirm
 Before proposing, make sure you have every value you need; ask the user for anything missing rather than guessing.
 - When the user wants to update their records, guide them step by step: new challans issued, goods received, \
 sales (large sales files are uploaded on the Sales page), then a physical count on the Physical Count page.
+- Photos of production-book pages (inward/outward): read every challan on the page and send the WHOLE page in \
+one propose_book_update call. The app compares it with what it already holds and adds only what is new, so \
+re-sending a page is safe. Book columns: C.No (challan no.), Item name, Size, Issue (units), Receive (units), \
+Addas (pcs), Shot = short (pcs), Unfinished (pcs). Reading rules:
+  - Ditto marks (") repeat the item name above. A challan's item name applies to the size rows under it until \
+the next item name.
+  - Issue/Receive are units with one decimal (75.0, 61.9). A blank Receive means nothing received yet.
+  - Short is normally pieces, but is sometimes written in units with a decimal (2.1 = 21 pcs): multiply by 10. \
+In the short column '-N' means N short and '+N' means N extra pieces (send short as -N).
+  - Use the product names from the master (find_products). Never invent a product; if a name does not match \
+any product, ask the user.
+  - If a figure is unclear, crossed out or whited out, ask the user instead of guessing.
+  - Use today's date for the entries unless the user gives one, and say so.
+After proposing, show the user a short table of what you read so they can check it against the page.
 - Keep answers short and practical. Use small tables for stock figures. Quote quantities in pieces and, \
 where useful, units in brackets.
 """
@@ -109,6 +126,27 @@ TOOLS = [
            "short_pcs": {"type": "integer", "description": "Negative = extra pieces received"},
            "unfinished_pcs": {"type": "integer"}},
           ["challan_no", "product", "size", "receipt_date"]),
+    _tool("propose_book_update",
+          "Propose bringing the app in line with a production-book page (e.g. read from a photo). Send every line "
+          "on the page with the book's cumulative figures. The app works out what is new (new challans, new lines, "
+          "receipts for the difference since the last entry) and shows the user one Confirm box. "
+          "Requires user confirmation.",
+          {"entry_date": _DATE,
+           "lines": {"type": "array", "items": {
+               "type": "object", "additionalProperties": False,
+               "required": ["challan_no", "product", "size", "issue_units"],
+               "properties": {
+                   "challan_no": {"type": "string"},
+                   "kind": {"type": "string", "enum": ["STITCHING", "SALE_TO_STITCHER", "INHOUSE"],
+                            "description": "Default STITCHING. 'Sales to <name>' = SALE_TO_STITCHER, "
+                                           "'RDK inhouse' = INHOUSE"},
+                   "stitcher": {"type": "string", "description": "Stitcher name if written; else omit"},
+                   "product": _PRODUCT, "size": _SIZE,
+                   "issue_units": {"type": "number"},
+                   "receive_units": {"type": "number", "description": "Book total received so far, units"},
+                   "addas_pcs": {"type": "integer"}, "short_pcs": {"type": "integer"},
+                   "unfinished_pcs": {"type": "integer"}}}}},
+          ["entry_date", "lines"]),
     _tool("propose_settle_dues", "Propose recording finished pieces delivered for earlier short or unfinished "
           "pieces on a challan line. Requires user confirmation.",
           {"challan_no": {"type": "string"}, "product": _PRODUCT, "size": _SIZE, "date": _DATE,
@@ -224,6 +262,16 @@ def validate_proposal(conn, name, a):
             err = _check_product(conn, p)
             raise ValueError(f"{err['error']} Did you mean: {', '.join(err['did_you_mean']) or 'none'}")
 
+    if name == "propose_book_update":
+        plan = book_sync.plan_book_update(conn, a["lines"], a["entry_date"])
+        if plan["errors"]:
+            raise ValueError("Cannot use this page yet: " + "; ".join(plan["errors"]))
+        if not plan["actions"]:
+            msg = "The app already matches this page - nothing to change."
+            if plan["warnings"]:
+                msg += " Notes: " + "; ".join(plan["warnings"])
+            raise ValueError(msg)
+        return f"Update from book page, dated {a['entry_date']}:\n" + book_sync.describe_plan(plan)
     if name == "propose_issue_challan":
         if conn.execute("SELECT 1 FROM challans WHERE challan_no = ?", (str(a["challan_no"]),)).fetchone():
             raise ValueError(f"Challan {a['challan_no']} already exists")
@@ -267,6 +315,9 @@ def validate_proposal(conn, name, a):
 def execute_proposal(conn, p):
     """Run a confirmed proposal against the engine. Returns a short result string."""
     name, a = p["tool"], p["args"]
+    if name == "propose_book_update":
+        plan = book_sync.apply_book_update(conn, a["lines"], a["entry_date"])
+        return f"Saved {len(plan['actions'])} change(s) from the book page."
     if name == "propose_issue_challan":
         prod.create_challan(conn, a["challan_no"], a["issue_date"], a["kind"], a.get("stitcher") or None, a["lines"])
     elif name == "propose_receipt":
@@ -304,15 +355,42 @@ def _request_kwargs(model):
     return kw
 
 
-def run_turn(conn, client, history, user_text, proposals, model=DEFAULT_MODEL, today=None):
-    """Append the user's message and run the tool loop until Claude answers.
+MAX_IMAGE_SIDE = 2000
+
+
+class UnreadableImage(ValueError):
+    pass
+
+
+def image_block(data: bytes):
+    """Photo bytes -> Claude image block. Fixes phone rotation and shrinks big photos (keeps cost and the
+    5 MB per-image limit in check while leaving handwriting readable)."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(data)))
+    except Exception:
+        raise UnreadableImage("One of the attached files is not a readable photo. Please attach JPG or PNG photos.")
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=88)
+    return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                        "data": base64.standard_b64encode(buf.getvalue()).decode()}}
+
+
+def run_turn(conn, client, history, user_text, proposals, model=DEFAULT_MODEL, today=None, images=()):
+    """Append the user's message (with any photos) and run the tool loop until Claude answers.
 
     history: list of message dicts (mutated - append-only, assistant content is kept unchanged).
     proposals: list of proposal dicts (mutated - new proposals appended with status 'pending').
+    images: photo bytes to attach to this message.
     Returns the assistant's final text.
     """
     today = today or dt.date.today().isoformat()
-    history.append({"role": "user", "content": f"[Today is {today}]\n{user_text}"})
+    blocks = [image_block(b) for b in images]  # before touching history, so a bad photo changes nothing
+    text = f"[Today is {today}]\n{user_text or 'Please read the attached page(s).'}"
+    content = blocks + [{"type": "text", "text": text}] if blocks else text
+    history.append({"role": "user", "content": content})
     kwargs = _request_kwargs(model)
     for _ in range(MAX_TOOL_ROUNDS):
         response = client.beta.messages.create(messages=history, **kwargs)
