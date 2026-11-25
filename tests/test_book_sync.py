@@ -122,3 +122,38 @@ def test_bad_photo_changes_nothing(conn):
     with pytest.raises(agent.UnreadableImage):
         agent.run_turn(conn, FakeClient([]), history, "", [], images=[b"not an image"])
     assert history == []
+
+
+def bill_args(bill="INV-101", **extra):
+    return {"date": "2026-11-25", "bill_no": bill, "party": "Sharma Traders",
+            "lines": [{"product": "Colin Classic Pkt Boxer", "size": "85", "qty_units": 2.5},
+                      {"product": "Colin Classic Pkt Boxer", "size": "90", "qty_units": 1, "stock_type": "SECOND"}],
+            **extra}
+
+
+def test_sales_bill_reduces_stock_once(conn):
+    before = stock.closing_stock(conn, "2026-12-31", product="Colin Classic Pkt Boxer")
+    before = before.groupby(["size", "stock_type"])["closing_pcs"].sum()
+    summary = agent.validate_proposal(conn, "propose_sales_bill", bill_args())
+    assert "INV-101" in summary and "35 pcs" in summary
+    agent.execute_proposal(conn, {"tool": "propose_sales_bill", "args": bill_args(), "summary": summary})
+    after = stock.closing_stock(conn, "2026-12-31", product="Colin Classic Pkt Boxer")
+    after = after.groupby(["size", "stock_type"])["closing_pcs"].sum()
+    assert before[("85", "FRESH")] - after[("85", "FRESH")] == 20    # 2 boxes
+    assert before[("85", "LOOSE")] - after[("85", "LOOSE")] == 5     # + 5 loose
+    assert before[("90", "SECOND")] - after[("90", "SECOND")] == 10
+    # the same bill again - from a photo or from an ERP file - is refused
+    with pytest.raises(ValueError, match="already recorded"):
+        agent.validate_proposal(conn, "propose_sales_bill", bill_args())
+    rows = [dict(date="2026-11-25", product="Colin Classic Pkt Boxer", size="85", qty_pcs=20, stock_type="FRESH",
+                 ref="INV-101")]
+    with pytest.raises(ValueError, match="already recorded"):
+        stock.import_entries(conn, "SALE", rows, "erp.xlsx", "hash-x")
+
+
+def test_sales_bill_needs_bill_number_and_known_products(conn):
+    with pytest.raises(ValueError, match="Bill number"):
+        agent.validate_proposal(conn, "propose_sales_bill", bill_args(bill=" "))
+    bad = bill_args(lines=[{"product": "Mystery Vest", "size": "M", "qty_units": 1}])
+    with pytest.raises(ValueError, match="Unknown product"):
+        agent.validate_proposal(conn, "propose_sales_bill", bad)

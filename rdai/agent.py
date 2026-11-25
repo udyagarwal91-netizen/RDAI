@@ -65,6 +65,11 @@ any product, ask the user.
   - If a figure is unclear, crossed out or whited out, ask the user instead of guessing.
   - Use today's date for the entries unless the user gives one, and say so.
 After proposing, show the user a short table of what you read so they can check it against the page.
+- Photos of sales bills: read the bill number, date, customer and every line (item, size, quantity), and send \
+the whole bill in one propose_sales_bill call. Quantities on bills are units (1 unit = 10 pcs = 1 box) unless \
+the bill clearly says pieces - then convert (35 pcs = 3.5 units). Bill item names may be ERP or short names: map \
+each to the product master with find_products, and ask the user when a name is not clearly one product. Never \
+guess a bill number; if it is unreadable, ask. Several bills in one message = one propose_sales_bill per bill.
 - Keep answers short and practical. Use small tables for stock figures. Quote quantities in pieces and, \
 where useful, units in brackets.
 """
@@ -152,6 +157,22 @@ TOOLS = [
           {"challan_no": {"type": "string"}, "product": _PRODUCT, "size": _SIZE, "date": _DATE,
            "pieces": {"type": "integer"}, "against": {"type": "string", "enum": ["SHORT", "UNFINISHED"]}},
           ["challan_no", "product", "size", "date", "pieces", "against"]),
+    _tool("propose_sales_bill",
+          "Propose recording one sales bill (e.g. read from a photo of the bill): all its lines in one Confirm. "
+          "The bill number is required and is checked so a bill can never be recorded twice. "
+          "Requires user confirmation.",
+          {"date": _DATE, "bill_no": {"type": "string"},
+           "party": {"type": "string", "description": "Customer name on the bill, if written"},
+           "lines": {"type": "array", "items": {
+               "type": "object", "additionalProperties": False, "required": ["product", "size", "qty_units"],
+               "properties": {
+                   "product": _PRODUCT, "size": _SIZE,
+                   "qty_units": {"type": "number", "description": "Units (1 unit = 10 pcs = 1 box); "
+                                                                 "for fresh, 2.5 = 2 boxes + 5 loose"},
+                   "loose_pcs": {"type": "integer", "description": "Extra loose pieces, if billed separately"},
+                   "stock_type": {"type": "string", "enum": ["FRESH", "SECOND"],
+                                  "description": "SECOND for addas/seconds sold; default FRESH"}}}}},
+          ["date", "bill_no", "lines"]),
     _tool("propose_sale", "Propose a single manual sale entry (bulk sales are uploaded on the Sales page). "
           "Requires user confirmation.",
           {"date": _DATE, "product": _PRODUCT, "size": _SIZE,
@@ -299,8 +320,32 @@ def validate_proposal(conn, name, a):
             raise ValueError(f"Only {owed} pcs are outstanding as {a['against'].lower()} on that line")
         return (f"Challan {a['challan_no']} {a['product']} {a['size']}: {a['pieces']} finished pcs received "
                 f"against {a['against'].lower()} on {a['date']}")
+    if name == "propose_sales_bill":
+        bill = str(a.get("bill_no") or "").strip()
+        if not bill:
+            raise ValueError("Bill number is required - ask the user if it is not readable")
+        if stock.entered_bills(conn, [bill]):
+            raise ValueError(f"Bill {bill} is already recorded - not entered again")
+        if not a["lines"]:
+            raise ValueError("The bill has no lines")
+        rows = []
+        for ln in a["lines"]:
+            need_product(ln["product"])
+            for stype, qty in stock.split_qty({"qty_units": ln["qty_units"], "loose_pcs": ln.get("loose_pcs")},
+                                              ln.get("stock_type", "FRESH")):
+                rows.append((ln["product"], normalize_size(ln["size"]), stype, qty))
+        if not rows:
+            raise ValueError("All quantities on the bill are zero")
+        total = sum(q for *_, q in rows)
+        lines = "\n".join(f"  - {ln['product']} {normalize_size(ln['size'])}: {ln['qty_units']} units"
+                           + (f" + {ln['loose_pcs']} loose" if ln.get("loose_pcs") else "")
+                           + (" (seconds)" if ln.get("stock_type") == "SECOND" else "") for ln in a["lines"])
+        party = f" to {a['party']}" if a.get("party") else ""
+        return f"Sales bill **{bill}** dated {a['date']}{party} - {total} pcs, stock goes down by:\n{lines}"
     if name == "propose_sale":
         need_product(a["product"])
+        if a.get("bill_no") and stock.entered_bills(conn, [a["bill_no"]]):
+            raise ValueError(f"Bill {a['bill_no']} is already recorded - not entered again")
         return (f"Sale on {a['date']}: {a['product']} {a['size']} {a['qty_units']} units "
                 f"({a.get('stock_type', 'FRESH')}) bill {a.get('bill_no') or '-'}")
     if name == "propose_adjustment":
@@ -328,6 +373,17 @@ def execute_proposal(conn, p):
     elif name == "propose_settle_dues":
         lid, _ = _line_id(conn, a["challan_no"], a["product"], a["size"])
         prod.settle_dues(conn, lid, a["date"], a["pieces"], a["against"])
+    elif name == "propose_sales_bill":
+        bill = str(a["bill_no"]).strip()
+        with conn:
+            if stock.entered_bills(conn, [bill]):
+                raise ValueError(f"Bill {bill} is already recorded - not entered again")
+            for ln in a["lines"]:
+                for stype, qty in stock.split_qty({"qty_units": ln["qty_units"], "loose_pcs": ln.get("loose_pcs")},
+                                                  ln.get("stock_type", "FRESH")):
+                    stock.add_entry(conn, "SALE", a["date"], ln["product"], ln["size"], qty, stype, ref=bill,
+                                    note=f"Bill photo{' - ' + a['party'] if a.get('party') else ''}",
+                                    create_product=False)
     elif name == "propose_sale":
         with conn:
             for stype, qty in stock.split_qty({"qty_units": a["qty_units"]}, a.get("stock_type", "FRESH")):

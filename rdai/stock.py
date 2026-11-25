@@ -120,8 +120,20 @@ def unknown_products(conn, rows):
     return sorted({r["product"] for r in rows if find_product(conn, r["product"]) is None})
 
 
+def entered_bills(conn, refs):
+    """Bill numbers (refs) that already have sales recorded - to stop the same bill being counted twice,
+    e.g. once from a photo and once from an ERP export."""
+    refs = sorted({str(r).strip() for r in refs if r is not None and str(r).strip()})
+    if not refs:
+        return set()
+    marks = ",".join("?" * len(refs))
+    return {r["ref"] for r in conn.execute(
+        f"SELECT DISTINCT ref FROM stock_entries WHERE kind = 'SALE' AND ref IN ({marks})", refs)}
+
+
 def import_entries(conn, kind, rows, file_name, data_hash, create_products=False):
-    """Write validated rows as one batch. Unknown products must be mapped first unless create_products."""
+    """Write validated rows as one batch. Unknown products must be mapped first unless create_products.
+    Sales rows whose bill number is already recorded are rejected; drop them first (see entered_bills)."""
     if kind not in ("OPENING", "SALE"):
         raise ValueError("kind must be OPENING or SALE")
     if not create_products:
@@ -130,6 +142,8 @@ def import_entries(conn, kind, rows, file_name, data_hash, create_products=False
             raise ValueError("Unknown products (map them first): " + ", ".join(unknown))
     if conn.execute("SELECT 1 FROM import_batches WHERE kind = ? AND file_hash = ?", (kind, data_hash)).fetchone():
         raise ValueError("This exact file has already been imported")
+    if kind == "SALE" and (dup := entered_bills(conn, [r.get("ref") for r in rows])):
+        raise ValueError("These bills are already recorded: " + ", ".join(sorted(dup)))
     with conn:
         bid = conn.execute("INSERT INTO import_batches(kind, file_name, file_hash, row_count) VALUES (?, ?, ?, ?)",
                            (kind, file_name, data_hash, len(rows))).lastrowid

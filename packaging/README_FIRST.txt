@@ -8,7 +8,7 @@ START:  double-click RDAI.exe
 YOUR DATA:  the folder "data" next to RDAI.exe (file rdai.db).
             Copy that file to a pen drive or Google Drive every day.
 
-UPDATING TO A NEW VERSION:  Settings page -> "Check for updates" -> "Update now".
+UPDATING TO A NEW VERSION:  click "Update RDAI now" in the left sidebar (or "Check for updates").
             RDAI backs up your data, installs the new version and reopens by itself.
             (Manual way: extract the new zip and copy your old "data" folder into it.)
             Keep your own files outside the RDAI folder - updating replaces everything

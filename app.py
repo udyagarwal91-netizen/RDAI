@@ -41,9 +41,39 @@ def update_info():
         return None
 
 
-if updater.can_self_update() and (u := update_info()) and u["available"]:
-    st.sidebar.success(f"Update available (build {u['latest']}). Go to **Settings** to install it.")
-st.sidebar.caption(f"RDAI build {updater.current_build() or 'dev'}")
+def install_update(info, where):
+    """Download and install an update, showing progress in `where` (sidebar or page). Exits RDAI on success."""
+    bar = where.progress(0.0, text="Downloading update...")
+    try:
+        db_file = conn.execute("PRAGMA database_list").fetchone()["file"]
+        backup = updater.apply_update(info, db_file, progress=lambda f: bar.progress(min(f, 1.0)))
+    except Exception as e:
+        where.error(f"Update failed, nothing was changed: {e}")
+        return
+    where.success(f"Data backed up to {backup}. RDAI is closing and will reopen in a few seconds with the new "
+                  "version. You can close this browser tab.")
+    threading.Thread(target=lambda: (time.sleep(3), os._exit(0)), daemon=True).start()
+    st.stop()
+
+
+with st.sidebar:
+    st.divider()
+    st.caption(f"RDAI build {updater.current_build() or 'dev'}")
+    if updater.can_self_update():
+        u = update_info()
+        if u and u["available"]:
+            st.success(f"New version available: build {u['latest']}")
+            if st.button("⬆️ Update RDAI now", type="primary", width="stretch"):
+                install_update(u, st.sidebar)
+        elif st.button("🔄 Check for updates", width="stretch"):
+            update_info.clear()
+            u = update_info()
+            if u is None:
+                st.caption("Could not reach GitHub (no internet?).")
+            elif u["available"]:
+                st.rerun()
+            else:
+                st.caption("You have the latest version.")
 
 
 def product_names():
@@ -511,6 +541,16 @@ elif page == "Sales":
     st.caption("Export the sales report from the ERP to Excel/CSV (date, item, size, qty in units) and upload it. "
                "Item names are matched to the product master; unknown names are asked once and remembered.")
     res = upload_flow("SALE", "sale")
+    if res and (dup := stock.entered_bills(conn, [r.get("ref") for r in res[0]])):
+        st.warning(f"{len(dup)} bill(s) in this file are already recorded (e.g. from a bill photo or an earlier "
+                   f"upload): {', '.join(sorted(dup)[:20])}{' ...' if len(dup) > 20 else ''}. "
+                   "Their rows will be skipped so stock is not reduced twice.")
+        res = ([r for r in res[0] if r.get("ref") not in dup], *res[1:])
+    if res and not any(r.get("ref") for r in res[0]):
+        st.caption("Tip: map the ERP's bill number column to 'ref' so the same bill can never be counted twice.")
+    if res and not res[0]:
+        st.info("Nothing new to import.")
+        res = None
     if res and st.button("Import sales", type="primary"):
         try:
             bid = stock.import_entries(conn, "SALE", *res)
@@ -708,17 +748,7 @@ elif page == "Settings":
         st.caption("Update now: downloads the new version (~100 MB), backs up your data file, closes RDAI, "
                    "installs, and opens RDAI again in a new browser tab. Your data folder is not touched.")
         if st.button("Update now", type="primary"):
-            bar = st.progress(0.0, text="Downloading update...")
-            try:
-                db_file = conn.execute("PRAGMA database_list").fetchone()["file"]
-                backup = updater.apply_update(info, db_file, progress=lambda f: bar.progress(min(f, 1.0)))
-            except Exception as e:
-                st.error(f"Update failed, nothing was changed: {e}")
-            else:
-                st.success(f"Data backed up to {backup}. RDAI is closing and will reopen in a few seconds "
-                           "with the new version. You can close this browser tab.")
-                threading.Thread(target=lambda: (time.sleep(3), os._exit(0)), daemon=True).start()
-                st.stop()
+            install_update(info, st)
 
     st.subheader("Data file")
     st.code(os.path.abspath(conn.execute("PRAGMA database_list").fetchone()["file"]))
